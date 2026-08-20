@@ -1,0 +1,6 @@
+{
+  "name": "InfraDash - Gestión de Servicios",
+  "description": "Dashboard de control y análisis de consumo de energía eléctrica y agua para predios e infraestructura.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
