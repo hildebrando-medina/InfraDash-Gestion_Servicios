@@ -11,7 +11,7 @@ import { ReceiptModal } from './components/ReceiptModal';
 import { DeleteConfirmModal } from './components/DeleteConfirmModal';
 import { FilterModal } from './components/FilterModal';
 import { ToastContainer } from './components/Toast';
-import { Search, Filter, Download, Plus, RotateCcw, Sparkles, Zap, Droplets } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<UtilityType>('energy');
@@ -36,7 +36,7 @@ export default function App() {
     }
   });
 
-  // Filters
+  // Filters State
   const [filters, setFilters] = useState<FilterState>({
     search: '',
     year: 'all',
@@ -85,7 +85,49 @@ export default function App() {
     setToasts(prev => prev.filter(t => t.id !== id));
   };
 
-  const currentRecords = activeTab === 'energy' ? energyRecords : waterRecords;
+  const rawRecords = activeTab === 'energy' ? energyRecords : waterRecords;
+
+  // ==========================================
+  // MOTOR DE FILTRADO AVANZADO Y BÚSQUEDA
+  // ==========================================
+  const currentRecords = rawRecords.filter(record => {
+    // 1. Filtro por Año de Ejercicio Fiscal
+    if (filters.year !== 'all' && Number(record.year) !== Number(filters.year)) {
+      return false;
+    }
+
+    // 2. Filtro por Estado Operativo (Activos / Inactivos)
+    if (filters.statusFilter !== 'all' && record.status !== filters.statusFilter) {
+      return false;
+    }
+
+    // 3. Filtro por Estado de Deuda / Morosidad
+    if (filters.debtFilter === 'with_debt' && (!record.debtMonths || record.debtMonths <= 0)) {
+      return false;
+    }
+    if (filters.debtFilter === 'no_debt' && record.debtMonths && record.debtMonths > 0) {
+      return false;
+    }
+
+    // 4. Filtro por Categoría de Instalación
+    if (filters.categoryFilter !== 'all' && record.category !== filters.categoryFilter) {
+      return false;
+    }
+
+    // 5. Filtro de Búsqueda por texto (Suministro, Predio, Recibo, etc.)
+    if (filters.search && filters.search.trim() !== '') {
+      const query = filters.search.toLowerCase();
+      const matchSupply = record.supplyNumber?.toLowerCase().includes(query);
+      const matchProperty = record.propertyName?.toLowerCase().includes(query);
+      const matchReceipt = record.receiptNumber?.toLowerCase().includes(query);
+      const matchCategory = record.category?.toLowerCase().includes(query);
+      if (!matchSupply && !matchProperty && !matchReceipt && !matchCategory) {
+        return false;
+      }
+    }
+
+    return true;
+  });
 
   // CRUD Actions
   const handleSaveRecord = (record: SupplyRecord) => {
@@ -204,6 +246,7 @@ export default function App() {
         {/* Dynamic Interactive Charts */}
         <ChartsSection
           utilityType={activeTab}
+          records={currentRecords}
           onShowToast={showToast}
         />
 

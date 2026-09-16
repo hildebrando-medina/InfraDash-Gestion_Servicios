@@ -59,7 +59,7 @@ export const WATER_TOP_PROPERTIES = [
   { name: 'Bloque P. Pariñas', amount: 21000 },
 ];
 
-// ================= ENERGÍA ELÉCTRICA =================
+// ================= ENERGÍA ELÉCTRICA (2026 y 2027) =================
 export const INITIAL_ENERGY_RECORDS: SupplyRecord[] = [
   {
     id: 'e1',
@@ -73,7 +73,7 @@ export const INITIAL_ENERGY_RECORDS: SupplyRecord[] = [
     utilityType: 'energy',
     category: 'Talara',
     months: { ene: 12000, feb: 11500, mar: 13000, abr: 12500, may: 14000, jun: 11000, jul: 12500, ago: 13000, set: 12000, oct: 11800, nov: 12200, dic: 12700 },
-    totalAmount: 147700,   
+    totalAmount: 147700,    
     tariffType: 'Industrial MT',
     meterId: 'MED-8533426',
     lastUpdated: '2026-08-19'
@@ -111,10 +111,28 @@ export const INITIAL_ENERGY_RECORDS: SupplyRecord[] = [
     tariffType: 'Industrial MT',
     meterId: 'MED-8661490',
     lastUpdated: '2026-08-19'
+  },
+  // Registro de prueba para el año 2027 (Enero a Diciembre)
+  {
+    id: 'e4',
+    year: 2027,
+    supplyNumber: '8533427',
+    propertyName: 'Av. C 00 Club Talara (2027)',
+    address: 'Talara',
+    debtMonths: 0,
+    receiptNumber: 'REC-104',
+    status: 'active',
+    utilityType: 'energy',
+    category: 'Talara',
+    months: { ene: 13000, feb: 12500, mar: 13500, abr: 13000, may: 14500, jun: 12000, jul: 13000, ago: 13500, set: 12500, oct: 12200, nov: 12800, dic: 13200 },
+    totalAmount: 155700,    
+    tariffType: 'Industrial MT',
+    meterId: 'MED-8533427',
+    lastUpdated: '2026-09-16'
   }
 ];
 
-// ================= AGUA POTABLE =================
+// ================= AGUA POTABLE (2026 y 2027) =================
 export const INITIAL_WATER_RECORDS: SupplyRecord[] = [
   {
     id: 'a1',
@@ -127,7 +145,6 @@ export const INITIAL_WATER_RECORDS: SupplyRecord[] = [
     status: 'active',
     utilityType: 'water',
     category: 'Planta Refineria Talara',
-    // En el registro 'a1'
     months: { ene: 5000, feb: 5200, mar: 5100, abr: 5300, may: 5500, jun: 5400, jul: 5800, ago: 5600, set: 5200, oct: 5300, nov: 5500, dic: 5700 },
     totalAmount: 64600,
     tariffType: 'Comercial',
@@ -184,6 +201,24 @@ export const INITIAL_WATER_RECORDS: SupplyRecord[] = [
     tariffType: 'Comercial',
     meterId: 'MED-71155072',
     lastUpdated: '2026-08-19'
+  },
+  // Registro de prueba para el año 2027 (Enero a Diciembre)
+  {
+    id: 'a5',
+    year: 2027,
+    supplyNumber: '71155099',
+    propertyName: 'REFINERIA CER. CERCADO 2 (2027)',
+    address: 'Talara',
+    debtMonths: 0,
+    receiptNumber: 'REC-005',
+    status: 'active',
+    utilityType: 'water',
+    category: 'Planta Refineria Talara',
+    months: { ene: 5100, feb: 5300, mar: 5200, abr: 5400, may: 5600, jun: 5500, jul: 5900, ago: 5700, set: 5300, oct: 5400, nov: 5600, dic: 5800 },
+    totalAmount: 66200,
+    tariffType: 'Comercial',
+    meterId: 'MED-71155099',
+    lastUpdated: '2026-09-16'
   }
 ];
 

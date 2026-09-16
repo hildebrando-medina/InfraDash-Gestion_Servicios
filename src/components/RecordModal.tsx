@@ -1,200 +1,331 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save } from 'lucide-react';
-import { SupplyRecord } from '../types';
-import { MONTH_NAMES } from '../data/mockData';
+import { X } from 'lucide-react';
+import { SupplyRecord, MonthlyValues, UtilityType } from '../types';
 
 interface RecordModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (record: SupplyRecord) => void;
-  recordToEdit?: SupplyRecord | null;
-  utilityType: 'energy' | 'water';
+  utilityType: UtilityType;
+  editingRecord?: SupplyRecord | null;
 }
 
 export const RecordModal: React.FC<RecordModalProps> = ({
   isOpen,
   onClose,
   onSave,
-  recordToEdit,
   utilityType,
+  editingRecord
 }) => {
-  const [formData, setFormData] = useState<Partial<SupplyRecord>>({
+  const [formData, setFormData] = useState({
     year: 2026,
     supplyNumber: '',
+    receiptNumber: '',
     propertyName: '',
     category: 'Oficinas Administrativas',
+    selectedMonth: 'Enero',
+    previousReading: 0,
+    currentReading: 0,
     consumption: 0,
     amount: 0,
-    selectedMonth: 'ene',
+    debtMonths: 0
   });
 
   useEffect(() => {
-    if (recordToEdit) {
+    if (editingRecord) {
       setFormData({
-        ...recordToEdit,
-        consumption: recordToEdit.consumption || 0,
-        amount: recordToEdit.amount || 0,
-        selectedMonth: recordToEdit.selectedMonth || 'ene',
+        year: editingRecord.year || 2026,
+        supplyNumber: editingRecord.supplyNumber || '',
+        receiptNumber: editingRecord.receiptNumber || '',
+        propertyName: editingRecord.propertyName || editingRecord.address || '',
+        category: editingRecord.category || 'Oficinas Administrativas',
+        selectedMonth: 'Enero',
+        previousReading: editingRecord.previousReading || 0,
+        currentReading: editingRecord.currentReading || 0,
+        consumption: editingRecord.consumption || 0,
+        amount: editingRecord.amount || 0,
+        debtMonths: editingRecord.debtMonths || 0
       });
     } else {
       setFormData({
         year: 2026,
         supplyNumber: '',
+        receiptNumber: '',
         propertyName: '',
         category: 'Oficinas Administrativas',
+        selectedMonth: 'Enero',
+        previousReading: 0,
+        currentReading: 0,
         consumption: 0,
         amount: 0,
-        selectedMonth: 'ene',
+        debtMonths: 0
       });
     }
-  }, [recordToEdit, isOpen]);
+  }, [editingRecord, isOpen]);
 
-  if (!isOpen) return null;
+  const handleReadingChange = (prev: number, curr: number) => {
+    const calculatedConsumption = Math.max(0, curr - prev);
+    setFormData(prevData => ({
+      ...prevData,
+      previousReading: prev,
+      currentReading: curr,
+      consumption: calculatedConsumption
+    }));
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    
+    if (name === 'previousReading') {
+      handleReadingChange(Number(value), formData.currentReading);
+    } else if (name === 'currentReading') {
+      handleReadingChange(formData.previousReading, Number(value));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [name]: value
+      }));
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(formData as SupplyRecord);
+
+    // Mapeo en minúsculas coincidiendo con tu src/types.ts
+    const monthMap: Record<string, keyof MonthlyValues> = {
+      'Enero': 'ene',
+      'Febrero': 'feb',
+      'Marzo': 'mar',
+      'Abril': 'abr',
+      'Mayo': 'may',
+      'Junio': 'jun',
+      'Julio': 'jul',
+      'Agosto': 'ago',
+      'Septiembre': 'set',
+      'Octubre': 'oct',
+      'Noviembre': 'nov',
+      'Diciembre': 'dic'
+    };
+
+    const monthKey = monthMap[formData.selectedMonth] || 'ene';
+    const montoFacturado = Number(formData.amount || 0);
+
+    const currentMonths: MonthlyValues = editingRecord?.months || {
+      ene: 0, feb: 0, mar: 0, abr: 0, may: 0, jun: 0
+    };
+
+    const updatedMonths: MonthlyValues = {
+      ...currentMonths,
+      [monthKey]: montoFacturado
+    };
+
+    const totalSoles = Object.values(updatedMonths).reduce(
+      (acc, val) => acc + (Number(val) || 0), 0
+    );
+
+    const recordToSave: SupplyRecord = {
+      id: editingRecord?.id || Date.now().toString(),
+      year: Number(formData.year) || 2026,
+      supplyNumber: formData.supplyNumber || '',
+      propertyName: formData.propertyName || '',
+      address: formData.propertyName || '',
+      debtMonths: Number(formData.debtMonths) || 0,
+      receiptNumber: formData.receiptNumber || '',
+      status: 'active',
+      utilityType: utilityType,
+      category: formData.category as any,
+      months: updatedMonths,
+      totalAmount: totalSoles,
+      previousReading: Number(formData.previousReading) || 0,
+      currentReading: Number(formData.currentReading) || 0,
+      consumption: Number(formData.consumption) || 0,
+      amount: montoFacturado
+    };
+
+    onSave(recordToSave);
     onClose();
   };
+
+  if (!isOpen) return null;
 
   const unitLabel = utilityType === 'energy' ? 'kWh' : 'm³';
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden shadow-2xl flex flex-col">
-        <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-          <h2 className="text-xl font-bold text-slate-800">
-            {recordToEdit ? 'Editar Registro' : 'Nuevo Registro'}
-          </h2>
-          <button
-            onClick={onClose}
-            type="button"
-            className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-500"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl relative max-h-[90vh] overflow-y-auto">
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+        >
+          <X className="w-6 h-6" />
+        </button>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+        <h2 className="text-xl font-bold text-gray-900 mb-6">
+          {editingRecord ? 'Editar Registro de Suministro' : 'Nuevo Registro de Suministro'}
+        </h2>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
                 N° Suministro
               </label>
               <input
                 type="text"
+                name="supplyNumber"
+                value={formData.supplyNumber}
+                onChange={handleChange}
+                placeholder="Ej. 71155016"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                 required
-                value={formData.supplyNumber || ''}
-                onChange={(e) => setFormData({ ...formData, supplyNumber: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm text-slate-800"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                N° Recibo
+              </label>
+              <input
+                type="text"
+                name="receiptNumber"
+                value={formData.receiptNumber}
+                onChange={handleChange}
+                placeholder="Ej. REC-001"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
                 Nombre Predio / Sede
               </label>
               <input
                 type="text"
+                name="propertyName"
+                value={formData.propertyName}
+                onChange={handleChange}
+                placeholder="Ej. REFINERIA CER. CERCADO 2"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                 required
-                value={formData.propertyName || ''}
-                onChange={(e) => setFormData({ ...formData, propertyName: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm text-slate-800"
               />
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
                 Categoría / Ubicación
               </label>
               <select
-                value={formData.category || 'Oficinas Administrativas'}
-                onChange={(e) => setFormData({ ...formData, category: e.target.value as any })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm text-slate-800"
+                name="category"
+                value={formData.category}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
               >
+                <option value="Oficinas Administrativas">Oficinas Administrativas</option>
                 <option value="Talara">Talara</option>
                 <option value="Talara Alta">Talara Alta</option>
-                <option value="Organos">Organos</option>
+                <option value="Organos">Órganos</option>
                 <option value="Negritos">Negritos</option>
-                <option value="Planta Refineria Talara">Planta Refineria Talara</option>
-                <option value="Almacén">Almacén</option>
-                <option value="Oficinas Administrativas">Oficinas Administrativas</option>
+                <option value="Planta Refineria Talara">Planta Refinería Talara</option>
+                <option value="Almacón">Almacén</option>
                 <option value="Talleres">Talleres</option>
                 <option value="Viviendas Punta Arenas">Viviendas Punta Arenas</option>
               </select>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
                 Mes de Registro
               </label>
               <select
-                value={formData.selectedMonth || 'ene'}
-                onChange={(e) => setFormData({ ...formData, selectedMonth: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm text-slate-800"
+                name="selectedMonth"
+                value={formData.selectedMonth}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
               >
-                {Object.entries(MONTH_NAMES).map(([key, name]) => (
-                  <option key={key} value={key}>
-                    {name}
-                  </option>
-                ))}
+                <option value="Enero">Enero</option>
+                <option value="Febrero">Febrero</option>
+                <option value="Marzo">Marzo</option>
+                <option value="Abril">Abril</option>
+                <option value="Mayo">Mayo</option>
+                <option value="Junio">Junio</option>
               </select>
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                Lectura Anterior (LECT_ANT)
+              </label>
+              <input
+                type="number"
+                name="previousReading"
+                value={formData.previousReading}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                min="0"
+                step="any"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                Lectura Actual (LECT_ACT)
+              </label>
+              <input
+                type="number"
+                name="currentReading"
+                value={formData.currentReading}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                min="0"
+                step="any"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
                 Consumo ({unitLabel})
               </label>
               <input
                 type="number"
-                step="0.01"
-                min="0"
-                required
-                value={formData.consumption ?? 0}
-                onChange={(e) =>
-                  setFormData({ ...formData, consumption: parseFloat(e.target.value) || 0 })
-                }
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold text-slate-900 bg-white"
-                placeholder="0.00"
+                name="consumption"
+                value={formData.consumption}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-gray-300 bg-gray-50 rounded-lg text-sm text-gray-700 font-semibold"
+                readOnly
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+            <div className="md:col-span-2">
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
                 Monto Facturado (S/)
               </label>
               <input
                 type="number"
-                step="0.01"
-                min="0"
-                required
-                value={formData.amount ?? 0}
-                onChange={(e) =>
-                  setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })
-                }
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold text-slate-900 bg-white"
+                name="amount"
+                value={formData.amount}
+                onChange={handleChange}
                 placeholder="0.00"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-semibold"
+                min="0"
+                step="0.01"
+                required
               />
             </div>
           </div>
 
-          <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
+          <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 text-sm font-medium transition-colors"
+              className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium flex items-center gap-2 transition-colors"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm"
             >
-              <Save className="w-4 h-4" />
               Guardar Registro
             </button>
           </div>

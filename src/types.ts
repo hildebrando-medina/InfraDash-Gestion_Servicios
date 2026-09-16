@@ -3,12 +3,12 @@ export type UtilityType = 'energy' | 'water';
 export type UserRole = 'admin' | 'consult';
 
 export interface MonthlyValues {
-  ene: number;
-  feb: number;
-  mar: number;
-  abr: number;
-  may: number;
-  jun: number;
+  ene?: number;
+  feb?: number;
+  mar?: number;
+  abr?: number;
+  may?: number;
+  jun?: number;
   jul?: number;
   ago?: number;
   set?: number;
@@ -33,6 +33,8 @@ export interface SupplyRecord {
   tariffType?: string;
   meterId?: string;
   lastUpdated?: string;
+  previousReading?: number; // LECT_ANT
+  currentReading?: number;  // LECT_ACT
   consumption?: number;
   amount?: number;
   selectedMonth?: string;

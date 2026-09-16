@@ -1,14 +1,12 @@
-import React, { useRef } from 'react';
-import { SupplyRecord, UtilityType } from '../types';
-import { X, Printer, Download, CheckCircle, AlertTriangle, Building, Zap, Droplets, QrCode } from 'lucide-react';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+import React from 'react';
+import { X, Printer } from 'lucide-react';
+import { SupplyRecord } from '../types';
 
 interface ReceiptModalProps {
   isOpen: boolean;
   onClose: () => void;
   record: SupplyRecord | null;
-  onShowToast: (title: string, message: string, type: 'info' | 'success') => void;
+  onShowToast?: (title: string, message: string, type?: 'success' | 'info' | 'warning' | 'error') => void;
 }
 
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({
@@ -20,223 +18,140 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   if (!isOpen || !record) return null;
 
   const isEnergy = record.utilityType === 'energy';
-  const subtotal = record.totalAmount / 1.18;
-  const igv = record.totalAmount - subtotal;
-  const receiptRef = useRef<HTMLDivElement>(null);
+  const unitLabel = isEnergy ? 'kW-h' : 'm³';
 
-  const handlePrint = () => {
-    onShowToast('Impresión Enviada', `Preparando recibo ${record.receiptNumber} para impresión física / PDF.`, 'success');
-  };
-const handleDownloadPDF = async () => {
-  if (!receiptRef.current) return;
-  try {
-    const canvas = await html2canvas(receiptRef.current, { scale: 2 });
-    const imgData = canvas.toDataURL('image/png');
-    const pdf = new jsPDF('p', 'mm', 'a4');
-    const imgWidth = 210;
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
-    pdf.addImage(imgData, 'PNG', 0, 10, imgWidth, imgHeight);
-    pdf.save(`Recibo_${record.supplyNumber}.pdf`);
-    onShowToast('Descarga Exitosa', `Documento digital ${record.receiptNumber}.pdf descargado correctamente.`, 'success');
-  } catch (error) {
-    onShowToast('Error', 'No se pudo generar el archivo PDF', 'info');
-  }
-};
+  // Lista de meses semestrales para la tabla de desglose
+  const semesterMonths = [
+    { key: 'ene', label: 'ENE' },
+    { key: 'feb', label: 'FEB' },
+    { key: 'mar', label: 'MARZ' },
+    { key: 'abr', label: 'ABR' },
+    { key: 'may', label: 'MAY' },
+    { key: 'jun', label: 'JUN' }
+  ];
+
+  // Cálculo del total acumulado en el semestre
+  const totalSemestral = semesterMonths.reduce((sum, m) => {
+    const val = record.months?.[m.key as keyof typeof record.months] || 0;
+    return sum + Number(val);
+  }, 0);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
-      <div ref={receiptRef} className="bg-white rounded-2xl shadow-2xl border border-[#e2e8f0] w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
-        {/* Header toolbar */}
-        <div className="px-6 py-4 border-b border-[#e2e8f0] flex items-center justify-between bg-[#f8fafc]">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-[#004ac6] text-[22px]">
-              receipt_long
-            </span>
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl relative max-h-[90vh] overflow-y-auto">
+        {/* Botón de Cierre */}
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+        >
+          <X className="w-6 h-6" />
+        </button>
+
+        {/* Encabezado del Recibo */}
+        <div className="border-b border-gray-200 pb-4 mb-4">
+          <div className="flex justify-between items-start">
             <div>
-              <h2 className="text-base font-bold text-[#191c1e]">
-                Detalle de Recibo de Servicio
+              <h2 className="text-xl font-bold text-gray-900">
+                Detalle de Recibo de Serv. {isEnergy ? 'Eléctrico' : 'de Agua'}
               </h2>
-              <span className="text-xs text-[#434655] font-mono-data">
-                {record.receiptNumber} • Año {record.year}
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handlePrint}
-              className="p-2 text-[#434655] hover:text-[#191c1e] hover:bg-[#eceef0] rounded-lg transition-colors"
-              title="Imprimir Recibo"
-            >
-              <Printer className="w-4 h-4" />
-            </button>
-            <button
-              onClick={handleDownloadPDF}
-              className="p-2 text-[#434655] hover:text-[#191c1e] hover:bg-[#eceef0] rounded-lg transition-colors"
-              title="Descargar PDF"
-            >
-              <Download className="w-4 h-4" />
-            </button>
-            <button
-              onClick={onClose}
-              className="p-2 text-[#737686] hover:text-[#191c1e] hover:bg-[#eceef0] rounded-lg transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Printable Digital Bill Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* Bill Top Banner */}
-          <div className="border border-[#e2e8f0] rounded-xl p-4 bg-[#f8fafc] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs font-bold uppercase tracking-wider text-[#004ac6]">
-                  {isEnergy ? 'Concesionaria Eléctrica Nacional' : 'Servicio de Agua Potable y Alcantarillado'}
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-[#dbe1ff] text-[#00174b] font-semibold">
-                  RUC 20100128451
-                </span>
-              </div>
-              <p className="text-sm font-bold text-[#191c1e]">
-                RECIBO POR SERVICIOS PÚBLICOS - ELECTRÓNICO
-              </p>
-              <p className="text-xs text-[#434655]">
-                Comprobante de Pago Regulado por OSINERGMIN / SUNASS
+              <p className="text-sm text-gray-500">
+                N° Recibo: <span className="font-semibold text-gray-800">{record.receiptNumber || 'S/N'}</span>
               </p>
             </div>
-
-            <div className="text-right sm:border-l sm:border-[#cbd5e1] sm:pl-4">
-              <span className="text-xs text-[#737686] block">N° de Comprobante</span>
-              <span className="text-base font-bold font-mono-data text-[#004ac6]">
-                {record.receiptNumber}
-              </span>
-              <div className="mt-1">
-                {record.debtMonths > 0 ? (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#ba1a1a] bg-[#ffdad6] px-2 py-0.5 rounded-full">
-                    <AlertTriangle className="w-3 h-3" />
-                    {record.debtMonths} Meses Pendientes
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#059669] bg-[#ecfdf5] px-2 py-0.5 rounded-full">
-                    <CheckCircle className="w-3 h-3" />
-                    Comprobante Cancelado
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Supply & Customer Info Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border border-[#e2e8f0] rounded-xl p-4">
-            <div>
-              <span className="text-[11px] font-semibold text-[#737686] uppercase block">
-                Predio / Sede Registrada
-              </span>
-              <p className="text-sm font-bold text-[#191c1e] mt-0.5">{record.propertyName}</p>
-              <p className="text-xs text-[#434655] mt-0.5">{record.address}</p>
-              <p className="text-xs text-[#737686] mt-1">Categoría: {record.category}</p>
-            </div>
-
-            <div className="space-y-1">
-              <div className="flex justify-between text-xs">
-                <span className="text-[#737686]">N° Suministro:</span>
-                <span className="font-mono-data font-bold text-[#191c1e]">{record.supplyNumber}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-[#737686]">Medidor Físico:</span>
-                <span className="font-mono-data text-[#191c1e]">{record.meterId || 'MED-AUTO-991'}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-[#737686]">Opción Tarifaria:</span>
-                <span className="text-[#191c1e] font-medium">{record.tariffType || 'Tarifa Comercial'}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-[#737686]">Estado del Servicio:</span>
-                <span className={`font-semibold ${record.status === 'active' ? 'text-[#059669]' : 'text-[#ba1a1a]'}`}>
-                  {record.status === 'active' ? 'Activo / Con Suministro' : 'Inactivo / Suspendido'}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Monthly Breakdown Table */}
-          <div>
-            <h4 className="text-xs font-bold uppercase tracking-wider text-[#434655] mb-2">
-              Desglose Semestral de Facturación
-            </h4>
-            <div className="border border-[#e2e8f0] rounded-xl overflow-hidden">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-[#f2f4f6] text-[#434655] font-semibold border-b border-[#e2e8f0]">
-                  <tr>
-                    <th className="p-2.5">Mes</th>
-                    <th className="p-2.5 text-right">Lectura</th>
-                    <th className="p-2.5 text-right">Monto Facturado</th>
-                    <th className="p-2.5 text-center">Estado</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#f1f5f9] font-mono-data">
-                  {Object.entries(record.months).slice(0, 6).map(([monthKey, val]) => {
-                    const numVal = Number(val) || 0;
-                    return (
-                      <tr key={monthKey} className="hover:bg-[#f8fafc]">
-                        <td className="p-2.5 font-medium uppercase">{monthKey} 2023</td>
-                        <td className="p-2.5 text-right text-[#434655]">
-                          {isEnergy ? `${Math.round(numVal * 1.8)} kWh` : `${Math.round(numVal * 0.32)} m³`}
-                        </td>
-                        <td className="p-2.5 text-right font-semibold text-[#191c1e]">
-                          S/ {numVal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="p-2.5 text-center font-sans">
-                          <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#ecfdf5] text-[#059669]">
-                            Facturado
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Totals and QR Section */}
-          <div className="border border-[#e2e8f0] rounded-xl p-4 bg-[#f8fafc] flex flex-col sm:flex-row justify-between items-center gap-4">
-            <div className="flex items-center gap-3 text-xs text-[#434655]">
-              <div className="w-16 h-16 bg-white border border-[#cbd5e1] rounded-lg flex items-center justify-center p-1">
-                <QrCode className="w-12 h-12 text-[#191c1e]" />
-              </div>
-              <div>
-                <p className="font-semibold text-[#191c1e]">Código de Verificación SUNAT</p>
-                <p className="text-[11px] text-[#737686]">Hash: 8a9f-310e-bd29-c451</p>
-                <p className="text-[10px] text-[#737686]">Consulte su validez en portal fiscal</p>
-              </div>
-            </div>
-
-            <div className="w-full sm:w-60 space-y-1.5 text-xs">
-              <div className="flex justify-between text-[#434655]">
-                <span>Subtotal Base:</span>
-                <span className="font-mono-data">S/ {subtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              </div>
-              <div className="flex justify-between text-[#434655]">
-                <span>I.G.V. (18%):</span>
-                <span className="font-mono-data">S/ {igv.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              </div>
-              <div className="pt-1.5 border-t border-[#cbd5e1] flex justify-between font-bold text-sm text-[#004ac6]">
-                <span>TOTAL A PAGAR:</span>
-                <span className="font-mono-data">S/ {record.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-              </div>
+            <div className="flex gap-2 mr-8">
+              <button
+                onClick={() => window.print()}
+                className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg border border-gray-200 transition-colors"
+                title="Imprimir Recibo"
+              >
+                <Printer className="w-5 h-5" />
+              </button>
             </div>
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="px-6 py-3 border-t border-[#e2e8f0] bg-[#f8fafc] flex justify-end">
+        {/* Datos Principales y Lecturas */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 p-4 bg-gray-50 rounded-xl border border-gray-100 text-sm">
+          <div className="space-y-2">
+            <div>
+              <span className="text-xs text-gray-500 font-bold uppercase block">Predio / Dirección</span>
+              <p className="font-bold text-gray-800 text-base">{record.propertyName || record.address}</p>
+            </div>
+            <div>
+              <span className="text-xs text-gray-500 font-bold uppercase block">Categoría / Ubicación</span>
+              <p className="text-gray-700 font-medium">{record.category}</p>
+            </div>
+          </div>
+
+          <div className="space-y-1.5 border-t md:border-t-0 md:border-l border-gray-200 pt-3 md:pt-0 md:pl-4">
+            <p className="flex justify-between">
+              <span className="text-gray-500">N° Suministro:</span>
+              <strong className="text-gray-900">{record.supplyNumber}</strong>
+            </p>
+            <p className="flex justify-between">
+              <span className="text-gray-500">CONSUMO ({unitLabel}):</span>
+              <strong className="text-blue-600">{record.consumption || 0}</strong>
+            </p>
+            <p className="flex justify-between">
+              <span className="text-gray-500">LECT_ANT (Lectura Anterior):</span>
+              <strong className="text-gray-800">{record.previousReading || 0}</strong>
+            </p>
+            <p className="flex justify-between">
+              <span className="text-gray-500">LECT_ACT (Lectura Actual):</span>
+              <strong className="text-gray-800">{record.currentReading || 0}</strong>
+            </p>
+          </div>
+        </div>
+
+        {/* Desglose Semestral de Facturación (3 Columnas) */}
+        <div className="mt-4">
+          <h3 className="font-bold text-gray-800 mb-3 text-sm uppercase tracking-wide">
+            Desglose Semestral de Facturación
+          </h3>
+          <div className="overflow-x-auto border border-gray-200 rounded-lg">
+            <table className="w-full text-left border-collapse text-sm">
+              <thead>
+                <tr className="bg-gray-100 text-gray-700 border-b border-gray-200">
+                  <th className="p-3 border-r border-gray-200 font-bold">MESES</th>
+                  <th className="p-3 border-r border-gray-200 font-bold text-center">LECT-ACT (Lectura Actual)</th>
+                  <th className="p-3 font-bold text-right">MONTOS FACTURADOS (S/)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {semesterMonths.map((m) => {
+                  const montoMes = record.months?.[m.key as keyof typeof record.months] || 0;
+                  return (
+                    <tr key={m.key} className="hover:bg-gray-50 transition-colors">
+                      <td className="p-2.5 font-semibold text-gray-700 border-r border-gray-200">{m.label}</td>
+                      <td className="p-2.5 text-center text-gray-600 border-r border-gray-200">
+                        {record.currentReading || 0}
+                      </td>
+                      <td className="p-2.5 text-right font-medium text-gray-900">
+                        S/ {Number(montoMes).toFixed(2)}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {/* Fila del Total */}
+                <tr className="bg-blue-50/50 font-bold text-gray-900 border-t-2 border-gray-300">
+                  <td className="p-3 border-r border-gray-200 text-blue-900">TOTAL</td>
+                  <td className="p-3 text-center border-r border-gray-200 text-gray-400">-</td>
+                  <td className="p-3 text-right text-blue-700 text-base">
+                    S/ {totalSemestral.toFixed(2)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Botón de cierre inferior */}
+        <div className="mt-6 flex justify-end">
           <button
             onClick={onClose}
-            className="px-5 py-2 bg-[#004ac6] text-white rounded-lg text-xs font-semibold hover:bg-[#003ea8] transition-colors"
+            className="px-5 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg text-sm font-medium transition-colors"
           >
-            Cerrar Visualizador
+            Cerrar
           </button>
         </div>
       </div>

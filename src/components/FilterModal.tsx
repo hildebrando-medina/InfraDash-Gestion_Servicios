@@ -44,7 +44,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
               Año de Ejercicio Fiscal
             </label>
             <div className="grid grid-cols-5 gap-2">
-              {['all', 2026, 2025, 2024, 2023].map((yr) => (
+              {['all', 2027, 2026, 2025, 2024].map((yr) => (
                 <button
                   key={yr}
                   type="button"
@@ -121,21 +121,21 @@ export const FilterModal: React.FC<FilterModalProps> = ({
               Categoría de Instalación
             </label>
             <select
-  value={filters.categoryFilter}
-  onChange={(e) => setFilters({ ...filters, categoryFilter: e.target.value })}
-  className="w-full bg-[#f8fafc] border border-[#cbd5e1] rounded-lg px-3 py-2 text-xs text-[#191c1e] focus:border-[#004ac6] focus:outline-none"
->
-  <option value="all">Todas las categorías</option>
-  <option value="Talara">Talara</option>
-  <option value="Talara Alta">Talara Alta</option>
-  <option value="Órganos">Órganos</option>
-  <option value="Negritos">Negritos</option>
-  <option value="Planta Refinería Talara">Planta Refinería Talara</option>
-  <option value="Almacén">Almacén</option>
-  <option value="Oficinas Administrativas">Oficinas Administrativas</option>
-  <option value="Talleres">Talleres</option>
-  <option value="Viviendas Punta Arenas">Viviendas Punta Arenas</option>
-</select>
+              value={filters.categoryFilter}
+              onChange={(e) => setFilters({ ...filters, categoryFilter: e.target.value })}
+              className="w-full bg-[#f8fafc] border border-[#cbd5e1] rounded-lg px-3 py-2 text-xs text-[#191c1e] focus:border-[#004ac6] focus:outline-none"
+            >
+              <option value="all">Todas las categorías</option>
+              <option value="Talara">Talara</option>
+              <option value="Talara Alta">Talara Alta</option>
+              <option value="Órganos">Órganos</option>
+              <option value="Negritos">Negritos</option>
+              <option value="Planta Refineria Talara">Planta Refineria Talara</option>
+              <option value="Almacén">Almacén</option>
+              <option value="Oficinas Administrativas">Oficinas Administrativas</option>
+              <option value="Talleres">Talleres</option>
+              <option value="Viviendas Punta Arenas">Viviendas Punta Arenas</option>
+            </select>
           </div>
         </div>
 
