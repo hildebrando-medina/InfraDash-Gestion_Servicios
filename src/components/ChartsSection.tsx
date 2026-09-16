@@ -17,7 +17,7 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({ utilityType, onSho
   const [selectedProperty, setSelectedProperty] = useState<string | null>(null);
 
   // SVG Chart coordinate calculations
-  const maxVal = isEnergy ? 120000 : 5000;
+ const maxVal = isEnergy ? 150000 : 10000;
   const chartHeight = 220;
   const chartWidth = 520;
   const paddingLeft = 50;
@@ -75,13 +75,13 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({ utilityType, onSho
             </p>
           </div>
           <div className="flex items-center gap-1">
-            <button 
-              onClick={() => onShowToast('Exportación de Gráficos', 'Generando imagen vectorial SVG de la gráfica mensual.', 'info')}
-              className="p-1.5 text-[#737686] hover:text-[#191c1e] hover:bg-[#eceef0] rounded-md transition-colors"
-              title="Descargar gráfico"
-            >
-              <Download className="w-4 h-4" />
-            </button>
+            <button
+  onClick={() => window.print()}
+  className="p-1.5 text-[#737686] hover:text-[#191c1e] hover:bg-[#eceef0] rounded-md transition-colors"
+  title="Descargar gráfico"
+>
+  <Download className="w-4 h-4" />
+</button>
             <button 
               onClick={() => onShowToast('Información de Métricas', 'Datos calculados a partir de los recibos emitidos por las concesionarias de energía y agua.', 'info')}
               className="p-1.5 text-[#737686] hover:text-[#191c1e] hover:bg-[#eceef0] rounded-md transition-colors"
@@ -265,7 +265,7 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({ utilityType, onSho
                       S/ {prop.amount.toLocaleString()}
                     </span>
                     <span className="text-[10px] text-[#737686] font-mono-data">
-                      ({prop.percentage}%)
+                      ({(prop as any).percentage || 0}%)
                     </span>
                   </div>
                 </div>
@@ -277,7 +277,7 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({ utilityType, onSho
                         ? 'bg-[#57dffe] hover:bg-[#004ac6]' 
                         : 'bg-[#004ac6] hover:bg-[#003ea8]'
                     }`}
-                    style={{ width: `${prop.percentage}%` }}
+                    style={{ width: `${(prop as any).percentage || 0}%` }}
                   />
                 </div>
               </div>

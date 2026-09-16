@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { SupplyRecord, UtilityType } from '../types';
 import { X, Printer, Download, CheckCircle, AlertTriangle, Building, Zap, Droplets, QrCode } from 'lucide-react';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 interface ReceiptModalProps {
   isOpen: boolean;
@@ -20,18 +22,30 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   const isEnergy = record.utilityType === 'energy';
   const subtotal = record.totalAmount / 1.18;
   const igv = record.totalAmount - subtotal;
+  const receiptRef = useRef<HTMLDivElement>(null);
 
   const handlePrint = () => {
     onShowToast('Impresión Enviada', `Preparando recibo ${record.receiptNumber} para impresión física / PDF.`, 'success');
   };
-
-  const handleDownloadPDF = () => {
+const handleDownloadPDF = async () => {
+  if (!receiptRef.current) return;
+  try {
+    const canvas = await html2canvas(receiptRef.current, { scale: 2 });
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const imgWidth = 210;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    pdf.addImage(imgData, 'PNG', 0, 10, imgWidth, imgHeight);
+    pdf.save(`Recibo_${record.supplyNumber}.pdf`);
     onShowToast('Descarga Exitosa', `Documento digital ${record.receiptNumber}.pdf descargado correctamente.`, 'success');
-  };
+  } catch (error) {
+    onShowToast('Error', 'No se pudo generar el archivo PDF', 'info');
+  }
+};
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
-      <div className="bg-white rounded-2xl shadow-2xl border border-[#e2e8f0] w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+      <div ref={receiptRef} className="bg-white rounded-2xl shadow-2xl border border-[#e2e8f0] w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header toolbar */}
         <div className="px-6 py-4 border-b border-[#e2e8f0] flex items-center justify-between bg-[#f8fafc]">
           <div className="flex items-center gap-2">

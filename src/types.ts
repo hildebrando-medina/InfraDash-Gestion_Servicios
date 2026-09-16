@@ -33,6 +33,9 @@ export interface SupplyRecord {
   tariffType?: string;
   meterId?: string;
   lastUpdated?: string;
+  consumption?: number;
+  amount?: number;
+  selectedMonth?: string;
 }
 
 export interface FilterState {
