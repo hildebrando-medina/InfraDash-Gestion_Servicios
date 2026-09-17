@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { UtilityType, UserRole } from '../types';
-import { Zap, Droplets, Shield, Eye, LogOut, CheckCircle2 } from 'lucide-react';
+import { Shield, Eye, LogOut, CheckCircle2 } from 'lucide-react';
 
 interface TopAppBarProps {
   activeTab: UtilityType;
@@ -85,7 +85,7 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({
       </div>
 
       {/* Right: Role Switcher & User Profile */}
-      <div className="flex items-center gap-3 sm:gap-5">
+      <div className="flex items-center gap-3 sm:gap-4">
         {/* Role Switcher */}
         <div className="flex items-center bg-[#f2f4f6] p-1 rounded-full border border-[#e2e8f0] shadow-inner">
           <button

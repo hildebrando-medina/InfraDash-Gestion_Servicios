@@ -17,7 +17,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<UtilityType>('energy');
   const [role, setRole] = useState<UserRole>('admin');
 
-  // Stored Records for Energy and Water
+  // Stored Records for Energy and Water (Persistencia intacta)
   const [energyRecords, setEnergyRecords] = useState<SupplyRecord[]>(() => {
     try {
       const saved = localStorage.getItem('infradash_energy_records');
@@ -228,7 +228,7 @@ export default function App() {
           <div className="flex items-center gap-2 self-stretch sm:self-auto">
             <button
               onClick={handleResetDemoData}
-              className="px-3 py-1.5 bg-white border border-[#cbd5e1] hover:bg-[#f1f5f9] text-[#434655] rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+              className="px-3 py-1.5 bg-white border border-[#cbd5e1] hover:bg-[#f1f5f9] text-[#434655] rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
               title="Restablecer datos demo"
             >
               <RotateCcw className="w-3.5 h-3.5" />
@@ -250,7 +250,7 @@ export default function App() {
           onShowToast={showToast}
         />
 
-        {/* Data Table with Search, Export, Filters and Actions */}
+        {/* Data Table with Search, Column Export, Filters and Actions */}
         <DataTableSection
           utilityType={activeTab}
           role={role}
@@ -302,7 +302,7 @@ export default function App() {
         utilityType={activeTab}
       />
 
-      {/* Digital Receipt Voucher Modal */}
+      {/* Digital Receipt Voucher Modal (Con Lectura Anterior, Lectura Actual y Datos Reales) */}
       <ReceiptModal
         isOpen={isReceiptModalOpen}
         onClose={() => {
@@ -310,6 +310,7 @@ export default function App() {
           setSelectedReceiptRecord(null);
         }}
         record={selectedReceiptRecord}
+        utilityType={activeTab}
         onShowToast={showToast}
       />
 

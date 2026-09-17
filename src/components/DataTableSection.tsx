@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Eye, Edit2, Trash2, Search, Filter, AlertCircle, Plus } from 'lucide-react';
+import { Eye, Edit2, Trash2, Search, Filter, AlertCircle, Plus, FileSpreadsheet } from 'lucide-react';
 import { SupplyRecord, UtilityType, UserRole, FilterState } from '../types';
 
 interface DataTableSectionProps {
@@ -67,9 +67,55 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
     return `S/ ${Number(val).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
+  // Función para exportar los datos visibles a Excel (formato CSV compatible)
+  const handleExportToExcel = () => {
+    if (filteredRecords.length === 0) {
+      if (onShowToast) {
+        onShowToast('Exportación', 'No hay registros para exportar con los filtros actuales.', 'warning');
+      } else {
+        alert('No hay registros para exportar con los filtros actuales.');
+      }
+      return;
+    }
+
+    const headers = [
+      'Nro Suministro', 'Predio / Sede', 'Categoria', 'Nro Recibo', 
+      `Consumo (${unitLabel})`, 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Total Facturado'
+    ];
+    
+    const rows = filteredRecords.map(r => [
+      r.supplyNumber,
+      `"${r.propertyName || r.address || ''}"`,
+      `"${r.category || ''}"`,
+      r.receiptNumber || 'S/N',
+      r.consumption || 0,
+      r.months?.ene || 0,
+      r.months?.feb || 0,
+      r.months?.mar || 0,
+      r.months?.abr || 0,
+      r.months?.may || 0,
+      r.months?.jun || 0,
+      r.totalAmount || 0
+    ]);
+
+    const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map(e => e.join(';'))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Reporte_${utilityType === 'energy' ? 'Energia_Electrica' : 'Agua_Potable'}_2026.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    if (onShowToast) {
+      onShowToast('Éxito', 'Los datos se han exportado a Excel correctamente.', 'success');
+    }
+  };
+
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8">
-      {/* Encabezado y Controles de Búsqueda/Filtro y Botón Nuevo */}
+      {/* Encabezado y Controles de Búsqueda/Filtro, Exportar y Botón Nuevo */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
         <div>
           <h2 className="text-lg font-bold text-gray-900">
@@ -109,6 +155,16 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
               <span>Filtros</span>
             </button>
           )}
+
+          {/* Botón Exportar a Excel */}
+          <button
+            onClick={handleExportToExcel}
+            className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+            title="Exportar registros filtrados a Excel"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>Exportar Excel</span>
+          </button>
 
           {/* Botón Nuevo Registro */}
           {onOpenNewModal && role === 'admin' && (
@@ -220,7 +276,7 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
                       {onOpenReceiptModal && (
                         <button
                           onClick={() => onOpenReceiptModal(record)}
-                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
                           title="Ver Recibo Detallado"
                         >
                           <Eye className="w-4 h-4" />
@@ -230,7 +286,7 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
                       {onOpenEditModal && role === 'admin' && (
                         <button
                           onClick={() => onOpenEditModal(record)}
-                          className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                          className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
                           title="Editar Suministro"
                         >
                           <Edit2 className="w-4 h-4" />
@@ -240,7 +296,7 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
                       {onOpenDeleteModal && role === 'admin' && (
                         <button
                           onClick={() => onOpenDeleteModal(record)}
-                          className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                           title="Eliminar Suministro"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -279,7 +335,7 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
           <button
             disabled={currentPage === 1}
             onClick={() => setCurrentPage((prev: number) => Math.max(1, prev - 1))}
-            className="px-3 py-1 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40 transition-colors"
+            className="px-3 py-1 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40 transition-colors cursor-pointer"
           >
             Anterior
           </button>
@@ -289,7 +345,7 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
           <button
             disabled={currentPage === totalPages}
             onClick={() => setCurrentPage((prev: number) => Math.min(totalPages, prev + 1))}
-            className="px-3 py-1 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40 transition-colors"
+            className="px-3 py-1 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40 transition-colors cursor-pointer"
           >
             Siguiente
           </button>
