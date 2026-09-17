@@ -80,7 +80,7 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
 
     const headers = [
       'Nro Suministro', 'Predio / Sede', 'Categoria', 'Nro Recibo', 
-      `Consumo (${unitLabel})`, 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Total Facturado'
+      `Consumo (${unitLabel})`, 'Jul', 'Ago', 'Set', 'Oct', 'Nov', 'Dic', 'Total Facturado'
     ];
     
     const rows = filteredRecords.map(r => [
@@ -89,12 +89,12 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
       `"${r.category || ''}"`,
       r.receiptNumber || 'S/N',
       r.consumption || 0,
-      r.months?.ene || 0,
-      r.months?.feb || 0,
-      r.months?.mar || 0,
-      r.months?.abr || 0,
-      r.months?.may || 0,
-      r.months?.jun || 0,
+      r.months?.jul || 0,
+      r.months?.ago || 0,
+      r.months?.set || 0,
+      r.months?.oct || 0,
+      r.months?.nov || 0,
+      r.months?.dic || 0,
       r.totalAmount || 0
     ]);
 
@@ -103,7 +103,7 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `Reporte_${utilityType === 'energy' ? 'Energia_Electrica' : 'Agua_Potable'}_2026.csv`);
+    link.setAttribute('download', `Reporte_${utilityType === 'energy' ? 'Energia_Electrica' : 'Agua_Potable'}_2026_S2.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -119,7 +119,7 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
         <div>
           <h2 className="text-lg font-bold text-gray-900">
-            Registros de {utilityType === 'energy' ? 'Energía Eléctrica' : 'Agua Potable'}
+            Registros de {utilityType === 'energy' ? 'Energía Eléctrica' : 'Agua Potable'} (2do Semestre)
           </h2>
           <p className="text-xs text-gray-500">
             Mostrando {filteredRecords.length} suministros registrados
@@ -191,7 +191,7 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
               <th className="p-3 text-center border-r border-gray-200">CONSUMO ({unitLabel})</th>
               
               <th colSpan={6} className="p-3 text-center border-r border-gray-200 bg-blue-50/50 text-blue-900 font-bold">
-                DETALLE DE CONSUMOS (MONTOS FACTURADOS S/)
+                DETALLE DE CONSUMOS JUL - DIC (MONTOS FACTURADOS S/)
               </th>
               
               <th className="p-3 text-right border-r border-gray-200">TOTAL FACTURADO</th>
@@ -205,12 +205,12 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
               <th className="p-2 border-r border-gray-200"></th>
               <th className="p-2 border-r border-gray-200"></th>
 
-              <th className="p-2 text-right border-r border-gray-100 w-20">ENE</th>
-              <th className="p-2 text-right border-r border-gray-100 w-20">FEB</th>
-              <th className="p-2 text-right border-r border-gray-100 w-20">MAR</th>
-              <th className="p-2 text-right border-r border-gray-100 w-20">ABR</th>
-              <th className="p-2 text-right border-r border-gray-100 w-20">MAY</th>
-              <th className="p-2 text-right border-r border-gray-200 w-20">JUN</th>
+              <th className="p-2 text-right border-r border-gray-100 w-20">JUL</th>
+              <th className="p-2 text-right border-r border-gray-100 w-20">AGO</th>
+              <th className="p-2 text-right border-r border-gray-100 w-20">SET</th>
+              <th className="p-2 text-right border-r border-gray-100 w-20">OCT</th>
+              <th className="p-2 text-right border-r border-gray-100 w-20">NOV</th>
+              <th className="p-2 text-right border-r border-gray-200 w-20">DIC</th>
 
               <th className="p-2 border-r border-gray-200"></th>
               <th className="p-2"></th>
@@ -249,22 +249,22 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
                   </td>
 
                   <td className="p-3 text-right font-mono border-r border-gray-100 text-gray-600">
-                    {record.months?.ene ? formatCurrency(record.months.ene) : '-'}
+                    {record.months?.jul !== undefined ? formatCurrency(record.months.jul) : '-'}
                   </td>
                   <td className="p-3 text-right font-mono border-r border-gray-100 text-gray-600">
-                    {record.months?.feb ? formatCurrency(record.months.feb) : '-'}
+                    {record.months?.ago !== undefined ? formatCurrency(record.months.ago) : '-'}
                   </td>
                   <td className="p-3 text-right font-mono border-r border-gray-100 text-gray-600">
-                    {record.months?.mar ? formatCurrency(record.months.mar) : '-'}
+                    {record.months?.set !== undefined ? formatCurrency(record.months.set) : '-'}
                   </td>
                   <td className="p-3 text-right font-mono border-r border-gray-100 text-gray-600">
-                    {record.months?.abr ? formatCurrency(record.months.abr) : '-'}
+                    {record.months?.oct !== undefined ? formatCurrency(record.months.oct) : '-'}
                   </td>
                   <td className="p-3 text-right font-mono border-r border-gray-100 text-gray-600">
-                    {record.months?.may ? formatCurrency(record.months.may) : '-'}
+                    {record.months?.nov !== undefined ? formatCurrency(record.months.nov) : '-'}
                   </td>
                   <td className="p-3 text-right font-mono border-r border-gray-200 text-gray-600">
-                    {record.months?.jun ? formatCurrency(record.months.jun) : '-'}
+                    {record.months?.dic !== undefined ? formatCurrency(record.months.dic) : '-'}
                   </td>
 
                   <td className="p-3 text-right font-bold text-gray-900 border-r border-gray-100">
