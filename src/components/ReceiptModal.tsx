@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Printer, Download, Zap, Droplet, Building2, FileText, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { X, Printer, Download, Zap, Droplet, Building2, FileText, CheckCircle2, AlertTriangle, Calendar } from 'lucide-react';
 import { SupplyRecord, UtilityType } from '../types';
 
 interface ReceiptModalProps {
@@ -9,6 +9,22 @@ interface ReceiptModalProps {
   onClose: () => void;
   onShowToast?: (title: string, message: string, type?: 'success' | 'info' | 'warning' | 'error') => void;
 }
+
+// Diccionario de meses para mostrar el nombre completo limpio
+const MONTH_NAMES_MAP: { [key: string]: string } = {
+  ene: 'Enero',
+  feb: 'Febrero',
+  mar: 'Marzo',
+  abr: 'Abril',
+  may: 'Mayo',
+  jun: 'Junio',
+  jul: 'Julio',
+  ago: 'Agosto',
+  set: 'Septiembre',
+  oct: 'Octubre',
+  nov: 'Noviembre',
+  dic: 'Diciembre'
+};
 
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   record,
@@ -27,13 +43,15 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   const currReading = (record as any).currentReading ?? 0;
   const calculatedConsumption = currReading >= prevReading ? currReading - prevReading : (record.consumption ?? 0);
 
-  // Tarifas oficiales: 3.71 para energía y 0.85 para agua
-  const defaultRate = isEnergy ? 3.71 : 0.85; 
-  const unitRate = (record as any).unitRate || defaultRate;
-  
-  const totalAmount = record.totalAmount && record.totalAmount > 0 
-    ? record.totalAmount 
-    : calculatedConsumption * unitRate;
+  // Determinar el mes seleccionado o activo para este recibo
+  const rawSelectedMonth = (record as any).selectedMonth || 'jul';
+  const displayMonthName = MONTH_NAMES_MAP[rawSelectedMonth.toLowerCase()] || rawSelectedMonth.toUpperCase();
+
+  // Obtener el monto específico del mes si está registrado en el objeto months, o usar el total/consumo
+  const monthValue = record.months?.[rawSelectedMonth.toLowerCase() as keyof typeof record.months];
+  const effectiveAmount = monthValue !== undefined && monthValue !== null && monthValue > 0 
+    ? monthValue 
+    : (record.totalAmount || 0);
 
   const formatCurrency = (val: number) => {
     return `S/ ${Number(val).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -48,7 +66,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
 
   const handleDownloadPDF = () => {
     if (onShowToast) {
-      onShowToast('Descarga', `Recibo del suministro ${record.supplyNumber} preparado con éxito.`, 'success');
+      onShowToast('Descarga', `Recibo del suministro ${record.supplyNumber} (${displayMonthName}) preparado con éxito.`, 'success');
     } else {
       alert(`Descargando recibo del suministro: ${record.supplyNumber}`);
     }
@@ -68,8 +86,12 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               <h3 className="text-base font-bold">
                 Recibo Detallado de {isEnergy ? 'Energía Eléctrica' : 'Agua Potable'}
               </h3>
-              <p className="text-xs text-white/80">
-                Suministro N°: <span className="font-mono font-semibold">{record.supplyNumber}</span>
+              <p className="text-xs text-white/80 flex items-center gap-2 mt-0.5">
+                <span>Suministro N°: <strong className="font-mono">{record.supplyNumber}</strong></span>
+                <span>•</span>
+                <span className="inline-flex items-center gap-1 bg-white/20 px-2 py-0.5 rounded text-[11px] font-semibold">
+                  <Calendar className="w-3 h-3" /> Periodo: {displayMonthName} {record.year || 2026}
+                </span>
               </p>
             </div>
           </div>
@@ -83,7 +105,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
         </div>
 
         {/* Cuerpo del Recibo */}
-        <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto text-gray-700 text-xs">
+        <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto text-gray-700 text-xs">
           
           {/* Información General del Predio */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-xl border border-gray-100">
@@ -97,12 +119,12 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             <div>
               <span className="text-gray-400 block mb-0.5 uppercase tracking-wider text-[10px] font-bold">Categoría / Ubicación</span>
               <span className="font-semibold text-gray-700">
-                {record.category || 'General'} {(record as any).location ? `- ${(record as any).location}` : ''}
+                {record.category || 'General'}
               </span>
             </div>
             <div>
               <span className="text-gray-400 block mb-0.5 uppercase tracking-wider text-[10px] font-bold">N° de Medidor / Suministro</span>
-              <span className="font-mono font-semibold text-gray-800">{(record as any).meterNumber || record.supplyNumber}</span>
+              <span className="font-mono font-semibold text-gray-800">{record.meterId || record.supplyNumber}</span>
             </div>
             <div>
               <span className="text-gray-400 block mb-0.5 uppercase tracking-wider text-[10px] font-bold">N° de Comprobante / Recibo</span>
@@ -110,58 +132,56 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             </div>
           </div>
 
-          {/* Bloque de Lecturas y Consumo Sincronizado */}
+          {/* Bloque de Lecturas y Consumo Real */}
           <div className="border border-blue-100 bg-blue-50/30 rounded-xl p-4">
             <h4 className="font-bold text-blue-900 mb-3 flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
               <FileText className="w-4 h-4 text-blue-600" />
-              <span>Detalle de Lecturas y Metraje Sincronizado</span>
+              <span>Consumo Registrado para el mes de {displayMonthName}</span>
             </h4>
             <div className="grid grid-cols-3 gap-3 text-center">
               <div className="bg-white p-3 rounded-lg border border-gray-100 shadow-2xs">
                 <span className="text-gray-400 block text-[10px] uppercase font-semibold">Lectura Anterior</span>
-                <span className="font-mono font-bold text-gray-800 text-sm">{prevReading.toLocaleString('es-PE')}</span>
+                <span className="font-mono font-bold text-gray-800 text-sm">{prevReading > 0 ? prevReading.toLocaleString('es-PE') : '---'}</span>
                 <span className="text-[10px] text-gray-400 block">{unitLabel}</span>
               </div>
               <div className="bg-white p-3 rounded-lg border border-gray-100 shadow-2xs">
                 <span className="text-gray-400 block text-[10px] uppercase font-semibold">Lectura Actual</span>
-                <span className="font-mono font-bold text-blue-600 text-sm">{currReading.toLocaleString('es-PE')}</span>
+                <span className="font-mono font-bold text-blue-600 text-sm">{currReading > 0 ? currReading.toLocaleString('es-PE') : '---'}</span>
                 <span className="text-[10px] text-gray-400 block">{unitLabel}</span>
               </div>
               <div className="bg-white p-3 rounded-lg border border-blue-200 shadow-2xs bg-blue-50/50">
-                <span className="text-blue-700 block text-[10px] uppercase font-bold">Consumo Calculado</span>
-                <span className="font-mono font-black text-blue-900 text-base">{calculatedConsumption.toLocaleString('es-PE')}</span>
+                <span className="text-blue-700 block text-[10px] uppercase font-bold">Consumo del Periodo</span>
+                <span className="font-mono font-black text-blue-900 text-base">{calculatedConsumption > 0 ? calculatedConsumption.toLocaleString('es-PE') : (record.consumption || 'Registrado')}</span>
                 <span className="text-[10px] text-blue-600 block font-semibold">{unitLabel}</span>
               </div>
             </div>
           </div>
 
-          {/* Desglose Financiero y Tarifas */}
+          {/* Desglose Financiero Limpio (Sin tarifas ficticias estáticas) */}
           <div className="space-y-2 border-t border-gray-100 pt-4">
             <div className="flex justify-between items-center py-1">
-              <span className="text-gray-500">Tarifa Aplicada ({unitLabel}):</span>
-              <span className="font-mono font-semibold text-gray-800">S/ {unitRate.toFixed(2)}</span>
+              <span className="text-gray-500 font-medium">Concepto de Facturación ({displayMonthName}):</span>
+              <span className="font-mono font-semibold text-gray-800">Servicio de {isEnergy ? 'Energía Eléctrica' : 'Agua Potable'}</span>
             </div>
-            <div className="flex justify-between items-center py-1">
-              <span className="text-gray-500">Subtotal de Consumo:</span>
-              <span className="font-mono font-semibold text-gray-800">{formatCurrency(calculatedConsumption * unitRate)}</span>
-            </div>
+            
             {record.debtMonths && record.debtMonths > 0 ? (
               <div className="flex justify-between items-center py-1 text-red-600 font-semibold bg-red-50 px-2 rounded">
                 <span className="flex items-center gap-1">
-                  <AlertTriangle className="w-4 h-4" /> Deuda acumulada ({record.debtMonths} meses):
+                  <AlertTriangle className="w-4 h-4" /> Deuda acumulada:
                 </span>
-                <span className="font-mono">Meses pendientes en sistema</span>
+                <span className="font-mono">{record.debtMonths} mes(es) pendientes</span>
               </div>
             ) : null}
-            <div className="flex justify-between items-center py-3 border-t border-gray-200 text-sm">
-              <span className="font-bold text-gray-900">Monto Total Facturado:</span>
-              <span className="font-mono font-black text-blue-600 text-lg">{formatCurrency(totalAmount)}</span>
+
+            <div className="flex justify-between items-center py-3 border-t border-gray-200 text-sm bg-gray-50/80 px-3 rounded-xl">
+              <span className="font-bold text-gray-900">Monto Total Facturado ({displayMonthName}):</span>
+              <span className="font-mono font-black text-blue-600 text-lg">{formatCurrency(effectiveAmount)}</span>
             </div>
           </div>
 
           {/* Estado de pago */}
           <div className="flex items-center justify-between bg-gray-50 p-3 rounded-xl border border-gray-100">
-            <span className="text-gray-500 font-semibold">Estado Actual:</span>
+            <span className="text-gray-500 font-semibold">Estado Actual del Recibo:</span>
             {(record.debtMonths || 0) > 0 ? (
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700">
                 <AlertTriangle className="w-3.5 h-3.5" /> Pendiente de Pago
