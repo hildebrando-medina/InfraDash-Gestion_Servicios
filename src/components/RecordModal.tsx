@@ -91,7 +91,6 @@ export const RecordModal: React.FC<RecordModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Mapeo en minúsculas coincidiendo con tu src/types.ts
     const monthMap: Record<string, keyof MonthlyValues> = {
       'Enero': 'ene',
       'Febrero': 'feb',
@@ -111,7 +110,7 @@ export const RecordModal: React.FC<RecordModalProps> = ({
     const montoFacturado = Number(formData.amount || 0);
 
     const currentMonths: MonthlyValues = editingRecord?.months || {
-      ene: 0, feb: 0, mar: 0, abr: 0, may: 0, jun: 0
+      ene: 0, feb: 0, mar: 0, abr: 0, may: 0, jun: 0, jul: 0, ago: 0, set: 0, oct: 0, nov: 0, dic: 0
     };
 
     const updatedMonths: MonthlyValues = {
@@ -155,7 +154,7 @@ export const RecordModal: React.FC<RecordModalProps> = ({
       <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl relative max-h-[90vh] overflow-y-auto">
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
         >
           <X className="w-6 h-6" />
         </button>
@@ -227,7 +226,7 @@ export const RecordModal: React.FC<RecordModalProps> = ({
                 <option value="Organos">Órganos</option>
                 <option value="Negritos">Negritos</option>
                 <option value="Planta Refineria Talara">Planta Refinería Talara</option>
-                <option value="Almacón">Almacén</option>
+                <option value="Almacén">Almacén</option>
                 <option value="Talleres">Talleres</option>
                 <option value="Viviendas Punta Arenas">Viviendas Punta Arenas</option>
               </select>
@@ -241,7 +240,7 @@ export const RecordModal: React.FC<RecordModalProps> = ({
                 name="selectedMonth"
                 value={formData.selectedMonth}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
               >
                 <option value="Enero">Enero</option>
                 <option value="Febrero">Febrero</option>
@@ -249,6 +248,12 @@ export const RecordModal: React.FC<RecordModalProps> = ({
                 <option value="Abril">Abril</option>
                 <option value="Mayo">Mayo</option>
                 <option value="Junio">Junio</option>
+                <option value="Julio">Julio</option>
+                <option value="Agosto">Agosto</option>
+                <option value="Septiembre">Septiembre</option>
+                <option value="Octubre">Octubre</option>
+                <option value="Noviembre">Noviembre</option>
+                <option value="Diciembre">Diciembre</option>
               </select>
             </div>
 
@@ -318,13 +323,13 @@ export const RecordModal: React.FC<RecordModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm cursor-pointer"
             >
               Guardar Registro
             </button>
