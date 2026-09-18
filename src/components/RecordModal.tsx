@@ -63,23 +63,19 @@ export const RecordModal: React.FC<RecordModalProps> = ({
     }
   }, [editingRecord, isOpen]);
 
-  const handleReadingChange = (prev: number, curr: number) => {
-    const calculatedConsumption = Math.max(0, curr - prev);
-    setFormData(prevData => ({
-      ...prevData,
-      previousReading: prev,
-      currentReading: curr,
-      consumption: calculatedConsumption
-    }));
-  };
-
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     
-    if (name === 'previousReading') {
-      handleReadingChange(Number(value), formData.currentReading);
-    } else if (name === 'currentReading') {
-      handleReadingChange(formData.previousReading, Number(value));
+    if (name === 'previousReading' || name === 'currentReading') {
+      const prev = name === 'previousReading' ? Number(value) : formData.previousReading;
+      const curr = name === 'currentReading' ? Number(value) : formData.currentReading;
+      const calculatedConsumption = Math.max(0, curr - prev);
+      
+      setFormData(prevData => ({
+        ...prevData,
+        [name]: Number(value),
+        consumption: calculatedConsumption
+      }));
     } else {
       setFormData(prev => ({
         ...prev,
@@ -296,8 +292,9 @@ export const RecordModal: React.FC<RecordModalProps> = ({
                 name="consumption"
                 value={formData.consumption}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 bg-gray-50 rounded-lg text-sm text-gray-700 font-semibold"
-                readOnly
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-semibold bg-white"
+                min="0"
+                step="any"
               />
             </div>
 
