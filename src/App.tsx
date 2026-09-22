@@ -129,35 +129,51 @@ export default function App() {
     return true;
   });
 
-  // CRUD Actions
+  // CRUD Actions con Fusión Inteligente por N° de Suministro para evitar pérdida de meses
   const handleSaveRecord = (record: SupplyRecord) => {
+    const updateRecordsList = (prevList: SupplyRecord[]) => {
+      const existingIndex = prevList.findIndex(
+        r => r.supplyNumber.trim().toLowerCase() === record.supplyNumber.trim().toLowerCase() && 
+             Number(r.year) === Number(record.year)
+      );
+
+      if (existingIndex >= 0) {
+        const existingRecord = prevList[existingIndex];
+        
+        const mergedMonths = {
+          ...existingRecord.months,
+          ...record.months
+        };
+
+        const totalSoles = Object.values(mergedMonths).reduce(
+          (acc, val) => acc + (Number(val) || 0), 0
+        );
+
+        const updatedRecord: SupplyRecord = {
+          ...existingRecord,
+          ...record,
+          id: existingRecord.id,
+          months: mergedMonths,
+          totalAmount: totalSoles
+        };
+
+        const updatedList = [...prevList];
+        updatedList[existingIndex] = updatedRecord;
+        return updatedList;
+      } else {
+        return [record, ...prevList];
+      }
+    };
+
     if (activeTab === 'energy') {
-      setEnergyRecords(prev => {
-        const index = prev.findIndex(r => r.id === record.id);
-        if (index >= 0) {
-          const updated = [...prev];
-          updated[index] = record;
-          return updated;
-        } else {
-          return [record, ...prev];
-        }
-      });
+      setEnergyRecords(prev => updateRecordsList(prev));
     } else {
-      setWaterRecords(prev => {
-        const index = prev.findIndex(r => r.id === record.id);
-        if (index >= 0) {
-          const updated = [...prev];
-          updated[index] = record;
-          return updated;
-        } else {
-          return [record, ...prev];
-        }
-      });
+      setWaterRecords(prev => updateRecordsList(prev));
     }
 
     showToast(
       'Registro Guardado',
-      `Suministro ${record.supplyNumber} (${record.propertyName}) actualizado con éxito.`,
+      `Suministro ${record.supplyNumber} (${record.propertyName}) actualizado con éxito sin perder registros previos.`,
       'success'
     );
   };
@@ -197,7 +213,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#f8fafc] text-[#191c1e] flex flex-col font-sans">
-      {/* Top Application Bar with Brand, Tabs and Role Toggle */}
       <TopAppBar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -206,9 +221,7 @@ export default function App() {
         onShowToast={showToast}
       />
 
-      {/* Main Canvas Container */}
       <main className="flex-1 max-w-[1600px] w-full mx-auto p-4 sm:p-6 pb-24 md:pb-8 flex flex-col gap-5">
-        {/* Page Title & Main Header Row */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-3">
           <div>
             <div className="flex items-center gap-2 mb-1">
@@ -224,7 +237,6 @@ export default function App() {
             </p>
           </div>
 
-          {/* Quick actions row */}
           <div className="flex items-center gap-2 self-stretch sm:self-auto">
             <button
               onClick={handleResetDemoData}
@@ -237,20 +249,17 @@ export default function App() {
           </div>
         </div>
 
-        {/* KPI Cards Grid */}
         <KPIGrid
           utilityType={activeTab}
           records={currentRecords}
         />
 
-        {/* Dynamic Interactive Charts */}
         <ChartsSection
           utilityType={activeTab}
           records={currentRecords}
           onShowToast={showToast}
         />
 
-        {/* Data Table with Search, Column Export, Filters and Actions */}
         <DataTableSection
           utilityType={activeTab}
           role={role}
@@ -278,19 +287,16 @@ export default function App() {
         />
       </main>
 
-      {/* Mobile Bottom Navigation */}
       <BottomNavBar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
       />
 
-      {/* Toast Notification Stack */}
       <ToastContainer
         toasts={toasts}
         onDismiss={dismissToast}
       />
 
-      {/* Record Creation / Editing Modal */}
       <RecordModal
         isOpen={isRecordModalOpen}
         onClose={() => {
@@ -302,7 +308,6 @@ export default function App() {
         utilityType={activeTab}
       />
 
-      {/* Digital Receipt Voucher Modal (Con Lectura Anterior, Lectura Actual y Datos Reales) */}
       <ReceiptModal
         isOpen={isReceiptModalOpen}
         onClose={() => {
@@ -314,7 +319,6 @@ export default function App() {
         onShowToast={showToast}
       />
 
-      {/* Delete Confirmation Dialog */}
       <DeleteConfirmModal
         isOpen={isDeleteModalOpen}
         onClose={() => {
@@ -325,7 +329,6 @@ export default function App() {
         record={deletingRecord}
       />
 
-      {/* Advanced Filters Dialog */}
       <FilterModal
         isOpen={isFilterModalOpen}
         onClose={() => setIsFilterModalOpen(false)}
