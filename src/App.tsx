@@ -256,7 +256,7 @@ export default function App() {
 
         <ChartsSection
           utilityType={activeTab}
-          records={currentRecords}
+          records={rawRecords}
           onShowToast={showToast}
         />
 
