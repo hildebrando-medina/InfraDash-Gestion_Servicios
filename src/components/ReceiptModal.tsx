@@ -8,6 +8,7 @@ interface ReceiptModalProps {
   isOpen: boolean;
   onClose: () => void;
   onShowToast?: (title: string, message: string, type?: 'success' | 'info' | 'warning' | 'error') => void;
+  activeMonthView?: string; // Nuevo: Recibe el mes en foco desde la tabla
 }
 
 // Diccionario de meses para mostrar el nombre completo limpio
@@ -31,7 +32,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   utilityType,
   isOpen,
   onClose,
-  onShowToast
+  onShowToast,
+  activeMonthView = 'jul'
 }) => {
   if (!isOpen || !record) return null;
 
@@ -43,15 +45,30 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   const currReading = (record as any).currentReading ?? 0;
   const calculatedConsumption = currReading >= prevReading ? currReading - prevReading : (record.consumption ?? 0);
 
-  // Determinar el mes seleccionado o activo para este recibo
-  const rawSelectedMonth = (record as any).selectedMonth || 'jul';
+  // Determinar inteligentemente el mes a mostrar:
+  // 1. Si la vista activa de la tabla es distinta de 'all', usamos esa.
+  // 2. Si no, revisamos si el registro trae un selectedMonth.
+  // 3. Si no, buscamos el primer mes que tenga un monto registrado en el objeto months.
+  let rawSelectedMonth = activeMonthView !== 'all' ? activeMonthView : ((record as any).selectedMonth || 'jul');
+  
+  if (activeMonthView === 'all' && record.months) {
+    const monthsKeys = ['ago', 'set', 'oct', 'nov', 'dic', 'jul', 'jun', 'may', 'abr', 'mar', 'feb', 'ene'];
+    const foundActiveKey = monthsKeys.find(m => {
+      const val = record.months?.[m as keyof typeof record.months];
+      return val !== undefined && val !== null && Number(val) > 0;
+    });
+    if (foundActiveKey) {
+      rawSelectedMonth = foundActiveKey;
+    }
+  }
+
   const displayMonthName = MONTH_NAMES_MAP[rawSelectedMonth.toLowerCase()] || rawSelectedMonth.toUpperCase();
 
-  // Obtener el monto específico del mes si está registrado en el objeto months, o usar el total/consumo
+  // Obtener el monto específico del mes desde el objeto months
   const monthValue = record.months?.[rawSelectedMonth.toLowerCase() as keyof typeof record.months];
-  const effectiveAmount = monthValue !== undefined && monthValue !== null && monthValue > 0 
-    ? monthValue 
-    : (record.totalAmount || 0);
+  const effectiveAmount = monthValue !== undefined && monthValue !== null && Number(monthValue) > 0 
+    ? Number(monthValue) 
+    : (record.amount || record.totalAmount || 0);
 
   const formatCurrency = (val: number) => {
     return `S/ ${Number(val).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -157,7 +174,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             </div>
           </div>
 
-          {/* Desglose Financiero Limpio (Sin tarifas ficticias estáticas) */}
+          {/* Desglose Financiero */}
           <div className="space-y-2 border-t border-gray-100 pt-4">
             <div className="flex justify-between items-center py-1">
               <span className="text-gray-500 font-medium">Concepto de Facturación ({displayMonthName}):</span>
