@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Eye, Edit2, Trash2, Search, Filter, AlertCircle, Plus, FileSpreadsheet } from 'lucide-react';
+import { Eye, Edit2, Trash2, Search, Filter, AlertCircle, Plus, FileSpreadsheet, Calendar } from 'lucide-react';
 import { SupplyRecord, UtilityType, UserRole, FilterState } from '../types';
 
 interface DataTableSectionProps {
@@ -16,6 +16,8 @@ interface DataTableSectionProps {
   onOpenNewModal?: () => void;
   [key: string]: any;
 }
+
+type ActiveMonthView = 'all' | 'jul' | 'ago' | 'set' | 'oct' | 'nov' | 'dic';
 
 export const DataTableSection: React.FC<DataTableSectionProps> = ({
   records,
@@ -34,11 +36,9 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
   const [currentPage, setCurrentPage] = useState(1);
   const [localSearch, setLocalSearch] = useState('');
   const [localCategory, setLocalCategory] = useState('ALL');
+  const [selectedMonthView, setSelectedMonthView] = useState<ActiveMonthView>('all');
 
   const unitLabel = utilityType === 'energy' ? 'kW-h' : 'm³';
-
-  // Obtener categorías únicas dinámicamente de los registros
-  const categories = Array.from(new Set(records.map(r => r.category).filter(Boolean)));
 
   // Filtrado de registros
   const filteredRecords = records.filter((record: SupplyRecord) => {
@@ -67,7 +67,7 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
     return `S/ ${Number(val).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
-  // Función para exportar los datos visibles a Excel (formato CSV compatible)
+  // Función para exportar a Excel
   const handleExportToExcel = () => {
     if (filteredRecords.length === 0) {
       if (onShowToast) {
@@ -115,14 +115,14 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8">
-      {/* Encabezado y Controles de Búsqueda/Filtro, Exportar y Botón Nuevo */}
+      {/* Encabezado y Controles */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
         <div>
           <h2 className="text-lg font-bold text-gray-900">
             Registros de {utilityType === 'energy' ? 'Energía Eléctrica' : 'Agua Potable'} (2do Semestre)
           </h2>
           <p className="text-xs text-gray-500">
-            Mostrando {filteredRecords.length} suministros registrados
+            Mostrando {filteredRecords.length} suministros registrados en el sistema
           </p>
         </div>
 
@@ -145,11 +145,11 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
             />
           </div>
 
-          {/* Botón Filtro Avanzado Modal */}
+          {/* Botón Filtro Avanzado */}
           {onOpenFilterModal && (
             <button
               onClick={onOpenFilterModal}
-              className="px-3 py-2 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+              className="px-3 py-2 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <Filter className="w-4 h-4 text-gray-500" />
               <span>Filtros</span>
@@ -170,13 +170,41 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
           {onOpenNewModal && role === 'admin' && (
             <button
               onClick={onOpenNewModal}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Nuevo Suministro</span>
             </button>
           )}
         </div>
+      </div>
+
+      {/* Barra de Enfoque por Mes (Control visual agregado para mayor claridad) */}
+      <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-100 overflow-x-auto">
+        <span className="text-xs font-semibold text-gray-600 flex items-center gap-1 mr-2">
+          <Calendar className="w-3.5 h-3.5 text-blue-600" /> Enfocar Vista:
+        </span>
+        {[
+          { key: 'all', label: 'Todos los Meses' },
+          { key: 'jul', label: 'Julio' },
+          { key: 'ago', label: 'Agosto' },
+          { key: 'set', label: 'Setiembre' },
+          { key: 'oct', label: 'Octubre' },
+          { key: 'nov', label: 'Noviembre' },
+          { key: 'dic', label: 'Diciembre' }
+        ].map((m) => (
+          <button
+            key={m.key}
+            onClick={() => setSelectedMonthView(m.key as ActiveMonthView)}
+            className={`px-3 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap ${
+              selectedMonthView === m.key
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            {m.label}
+          </button>
+        ))}
       </div>
 
       {/* Tabla Principal */}
@@ -186,35 +214,38 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
             <tr className="bg-gray-50 text-gray-700 font-bold border-b border-gray-200">
               <th className="p-3 text-center border-r border-gray-200">N° SUMINISTRO</th>
               <th className="p-3 border-r border-gray-200 min-w-[200px]">NOMBRE PREDIO / SEDE</th>
-              <th className="p-3 border-r border-gray-200">CATEGORÍA / UBICACIÓN</th>
+              <th className="p-3 border-r border-gray-200">CATEGORÍA</th>
               <th className="p-3 text-center border-r border-gray-200">N° RECIBO</th>
               <th className="p-3 text-center border-r border-gray-200">CONSUMO ({unitLabel})</th>
               
-              <th colSpan={6} className="p-3 text-center border-r border-gray-200 bg-blue-50/50 text-blue-900 font-bold">
-                DETALLE DE CONSUMOS JUL - DIC (MONTOS FACTURADOS S/)
+              {/* Columnas dinámicas según el foco de mes */}
+              <th colSpan={selectedMonthView === 'all' ? 6 : 1} className="p-3 text-center border-r border-gray-200 bg-blue-50/50 text-blue-900 font-bold">
+                {selectedMonthView === 'all' ? 'DETALLE DE CONSUMOS JUL - DIC (S/)' : `MONTO FACTURADO - ${selectedMonthView.toUpperCase()}`}
               </th>
               
               <th className="p-3 text-right border-r border-gray-200">TOTAL FACTURADO</th>
               <th className="p-3 text-center">ACCIONES</th>
             </tr>
 
-            <tr className="bg-gray-50 text-gray-600 font-semibold border-b border-gray-200">
-              <th className="p-2 border-r border-gray-200"></th>
-              <th className="p-2 border-r border-gray-200"></th>
-              <th className="p-2 border-r border-gray-200"></th>
-              <th className="p-2 border-r border-gray-200"></th>
-              <th className="p-2 border-r border-gray-200"></th>
+            {selectedMonthView === 'all' && (
+              <tr className="bg-gray-50 text-gray-600 font-semibold border-b border-gray-200">
+                <th className="p-2 border-r border-gray-200"></th>
+                <th className="p-2 border-r border-gray-200"></th>
+                <th className="p-2 border-r border-gray-200"></th>
+                <th className="p-2 border-r border-gray-200"></th>
+                <th className="p-2 border-r border-gray-200"></th>
 
-              <th className="p-2 text-right border-r border-gray-100 w-20">JUL</th>
-              <th className="p-2 text-right border-r border-gray-100 w-20">AGO</th>
-              <th className="p-2 text-right border-r border-gray-100 w-20">SET</th>
-              <th className="p-2 text-right border-r border-gray-100 w-20">OCT</th>
-              <th className="p-2 text-right border-r border-gray-100 w-20">NOV</th>
-              <th className="p-2 text-right border-r border-gray-200 w-20">DIC</th>
+                <th className="p-2 text-right border-r border-gray-100 w-20">JUL</th>
+                <th className="p-2 text-right border-r border-gray-100 w-20">AGO</th>
+                <th className="p-2 text-right border-r border-gray-100 w-20">SET</th>
+                <th className="p-2 text-right border-r border-gray-100 w-20">OCT</th>
+                <th className="p-2 text-right border-r border-gray-100 w-20">NOV</th>
+                <th className="p-2 text-right border-r border-gray-200 w-20">DIC</th>
 
-              <th className="p-2 border-r border-gray-200"></th>
-              <th className="p-2"></th>
-            </tr>
+                <th className="p-2 border-r border-gray-200"></th>
+                <th className="p-2"></th>
+              </tr>
+            )}
           </thead>
 
           <tbody className="divide-y divide-gray-100 text-gray-700">
@@ -248,24 +279,33 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
                     {record.consumption ? `${record.consumption} ${unitLabel}` : '-'}
                   </td>
 
-                  <td className="p-3 text-right font-mono border-r border-gray-100 text-gray-600">
-                    {record.months?.jul !== undefined ? formatCurrency(record.months.jul) : '-'}
-                  </td>
-                  <td className="p-3 text-right font-mono border-r border-gray-100 text-gray-600">
-                    {record.months?.ago !== undefined ? formatCurrency(record.months.ago) : '-'}
-                  </td>
-                  <td className="p-3 text-right font-mono border-r border-gray-100 text-gray-600">
-                    {record.months?.set !== undefined ? formatCurrency(record.months.set) : '-'}
-                  </td>
-                  <td className="p-3 text-right font-mono border-r border-gray-100 text-gray-600">
-                    {record.months?.oct !== undefined ? formatCurrency(record.months.oct) : '-'}
-                  </td>
-                  <td className="p-3 text-right font-mono border-r border-gray-100 text-gray-600">
-                    {record.months?.nov !== undefined ? formatCurrency(record.months.nov) : '-'}
-                  </td>
-                  <td className="p-3 text-right font-mono border-r border-gray-200 text-gray-600">
-                    {record.months?.dic !== undefined ? formatCurrency(record.months.dic) : '-'}
-                  </td>
+                  {/* Renderizado condicional de celdas según el filtro de mes seleccionado */}
+                  {selectedMonthView === 'all' ? (
+                    <>
+                      <td className="p-3 text-right font-mono border-r border-gray-100 text-gray-600">
+                        {record.months?.jul !== undefined ? formatCurrency(record.months.jul) : '-'}
+                      </td>
+                      <td className="p-3 text-right font-mono border-r border-gray-100 text-gray-600">
+                        {record.months?.ago !== undefined ? formatCurrency(record.months.ago) : '-'}
+                      </td>
+                      <td className="p-3 text-right font-mono border-r border-gray-100 text-gray-600">
+                        {record.months?.set !== undefined ? formatCurrency(record.months.set) : '-'}
+                      </td>
+                      <td className="p-3 text-right font-mono border-r border-gray-100 text-gray-600">
+                        {record.months?.oct !== undefined ? formatCurrency(record.months.oct) : '-'}
+                      </td>
+                      <td className="p-3 text-right font-mono border-r border-gray-100 text-gray-600">
+                        {record.months?.nov !== undefined ? formatCurrency(record.months.nov) : '-'}
+                      </td>
+                      <td className="p-3 text-right font-mono border-r border-gray-200 text-gray-600">
+                        {record.months?.dic !== undefined ? formatCurrency(record.months.dic) : '-'}
+                      </td>
+                    </>
+                  ) : (
+                    <td className="p-3 text-right font-mono font-bold text-blue-700 border-r border-gray-200 bg-blue-50/20">
+                      {formatCurrency(record.months?.[selectedMonthView as keyof typeof record.months])}
+                    </td>
+                  )}
 
                   <td className="p-3 text-right font-bold text-gray-900 border-r border-gray-100">
                     {formatCurrency(record.totalAmount)}
