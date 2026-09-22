@@ -105,16 +105,14 @@ export const RecordModal: React.FC<RecordModalProps> = ({
     const monthKey = monthMap[formData.selectedMonth] || 'ene';
     const montoFacturado = Number(formData.amount || 0);
 
-    const currentMonths: MonthlyValues = editingRecord?.months || {
+    // RECUPERACIÓN SEGURA: Mantiene los meses anteriores que ya estaban guardados en el registro y solo actualiza el mes seleccionado
+    const currentMonths: MonthlyValues = editingRecord?.months ? { ...editingRecord.months } : {
       ene: 0, feb: 0, mar: 0, abr: 0, may: 0, jun: 0, jul: 0, ago: 0, set: 0, oct: 0, nov: 0, dic: 0
     };
 
-    const updatedMonths: MonthlyValues = {
-      ...currentMonths,
-      [monthKey]: montoFacturado
-    };
+    currentMonths[monthKey] = montoFacturado;
 
-    const totalSoles = Object.values(updatedMonths).reduce(
+    const totalSoles = Object.values(currentMonths).reduce(
       (acc, val) => acc + (Number(val) || 0), 0
     );
 
@@ -129,7 +127,7 @@ export const RecordModal: React.FC<RecordModalProps> = ({
       status: 'active',
       utilityType: utilityType,
       category: formData.category as any,
-      months: updatedMonths,
+      months: currentMonths,
       totalAmount: totalSoles,
       previousReading: Number(formData.previousReading) || 0,
       currentReading: Number(formData.currentReading) || 0,
