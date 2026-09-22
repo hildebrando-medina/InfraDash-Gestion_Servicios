@@ -315,7 +315,13 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
                     <div className="flex items-center justify-center gap-1">
                       {onOpenReceiptModal && (
                         <button
-                          onClick={() => onOpenReceiptModal(record)}
+                          onClick={() => {
+                            const recordWithMonth = { 
+                              ...record, 
+                              selectedMonth: selectedMonthView 
+                            };
+                            onOpenReceiptModal(recordWithMonth);
+                          }}
                           className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
                           title="Ver Recibo Detallado"
                         >

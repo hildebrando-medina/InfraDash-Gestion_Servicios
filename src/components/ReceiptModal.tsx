@@ -45,15 +45,14 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   const currReading = (record as any).currentReading ?? 0;
   const calculatedConsumption = currReading >= prevReading ? currReading - prevReading : (record.consumption ?? 0);
 
-  // Determinar inteligentemente el mes a mostrar:
-  // 1. Si la tabla tiene un mes específico seleccionado (ej. 'ago'), usamos ese.
-  // 2. Si está en 'all', buscamos el último mes registrado que tenga valor en el objeto months.
+  // Determinar el mes exacto de forma segura:
   let rawSelectedMonth = 'jul';
 
-  if (activeMonthView && activeMonthView !== 'all') {
+  if ((record as any).selectedMonth) {
+    rawSelectedMonth = (record as any).selectedMonth;
+  } else if (activeMonthView && activeMonthView !== 'all') {
     rawSelectedMonth = activeMonthView;
   } else if (record.months) {
-    // Orden de prioridad del más reciente al más antiguo con datos
     const monthsKeys = ['dic', 'nov', 'oct', 'set', 'ago', 'jul', 'jun', 'may', 'abr', 'mar', 'feb', 'ene'];
     const foundActiveKey = monthsKeys.find(m => {
       const val = record.months?.[m as keyof typeof record.months];
