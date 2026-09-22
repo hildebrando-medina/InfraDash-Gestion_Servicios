@@ -8,7 +8,7 @@ interface ReceiptModalProps {
   isOpen: boolean;
   onClose: () => void;
   onShowToast?: (title: string, message: string, type?: 'success' | 'info' | 'warning' | 'error') => void;
-  activeMonthView?: string; // Nuevo: Recibe el mes en foco desde la tabla
+  activeMonthView?: string;
 }
 
 // Diccionario de meses para mostrar el nombre completo limpio
@@ -33,7 +33,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   isOpen,
   onClose,
   onShowToast,
-  activeMonthView = 'jul'
+  activeMonthView = 'all'
 }) => {
   if (!isOpen || !record) return null;
 
@@ -46,13 +46,15 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   const calculatedConsumption = currReading >= prevReading ? currReading - prevReading : (record.consumption ?? 0);
 
   // Determinar inteligentemente el mes a mostrar:
-  // 1. Si la vista activa de la tabla es distinta de 'all', usamos esa.
-  // 2. Si no, revisamos si el registro trae un selectedMonth.
-  // 3. Si no, buscamos el primer mes que tenga un monto registrado en el objeto months.
-  let rawSelectedMonth = activeMonthView !== 'all' ? activeMonthView : ((record as any).selectedMonth || 'jul');
-  
-  if (activeMonthView === 'all' && record.months) {
-    const monthsKeys = ['ago', 'set', 'oct', 'nov', 'dic', 'jul', 'jun', 'may', 'abr', 'mar', 'feb', 'ene'];
+  // 1. Si la tabla tiene un mes específico seleccionado (ej. 'ago'), usamos ese.
+  // 2. Si está en 'all', buscamos el último mes registrado que tenga valor en el objeto months.
+  let rawSelectedMonth = 'jul';
+
+  if (activeMonthView && activeMonthView !== 'all') {
+    rawSelectedMonth = activeMonthView;
+  } else if (record.months) {
+    // Orden de prioridad del más reciente al más antiguo con datos
+    const monthsKeys = ['dic', 'nov', 'oct', 'set', 'ago', 'jul', 'jun', 'may', 'abr', 'mar', 'feb', 'ene'];
     const foundActiveKey = monthsKeys.find(m => {
       const val = record.months?.[m as keyof typeof record.months];
       return val !== undefined && val !== null && Number(val) > 0;
