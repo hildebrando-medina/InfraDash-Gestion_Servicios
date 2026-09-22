@@ -23,7 +23,7 @@ export const RecordModal: React.FC<RecordModalProps> = ({
     receiptNumber: '',
     propertyName: '',
     category: 'Oficinas Administrativas',
-    selectedMonth: 'Enero',
+    selectedMonth: 'Agosto',
     previousReading: 0,
     currentReading: 0,
     consumption: 0,
@@ -39,7 +39,7 @@ export const RecordModal: React.FC<RecordModalProps> = ({
         receiptNumber: editingRecord.receiptNumber || '',
         propertyName: editingRecord.propertyName || editingRecord.address || '',
         category: editingRecord.category || 'Oficinas Administrativas',
-        selectedMonth: 'Enero',
+        selectedMonth: 'Agosto',
         previousReading: editingRecord.previousReading || 0,
         currentReading: editingRecord.currentReading || 0,
         consumption: editingRecord.consumption || 0,
@@ -53,7 +53,7 @@ export const RecordModal: React.FC<RecordModalProps> = ({
         receiptNumber: '',
         propertyName: '',
         category: 'Oficinas Administrativas',
-        selectedMonth: 'Enero',
+        selectedMonth: 'Agosto',
         previousReading: 0,
         currentReading: 0,
         consumption: 0,
@@ -102,10 +102,9 @@ export const RecordModal: React.FC<RecordModalProps> = ({
       'Diciembre': 'dic'
     };
 
-    const monthKey = monthMap[formData.selectedMonth] || 'ene';
+    const monthKey = monthMap[formData.selectedMonth] || 'ago';
     const montoFacturado = Number(formData.amount || 0);
 
-    // RECUPERACIÓN SEGURA: Mantiene los meses anteriores que ya estaban guardados en el registro y solo actualiza el mes seleccionado
     const currentMonths: MonthlyValues = editingRecord?.months ? { ...editingRecord.months } : {
       ene: 0, feb: 0, mar: 0, abr: 0, may: 0, jun: 0, jul: 0, ago: 0, set: 0, oct: 0, nov: 0, dic: 0
     };
@@ -119,7 +118,7 @@ export const RecordModal: React.FC<RecordModalProps> = ({
     const recordToSave: SupplyRecord = {
       id: editingRecord?.id || Date.now().toString(),
       year: Number(formData.year) || 2026,
-      supplyNumber: formData.supplyNumber || '',
+      supplyNumber: formData.supplyNumber.trim() || '',
       propertyName: formData.propertyName || '',
       address: formData.propertyName || '',
       debtMonths: Number(formData.debtMonths) || 0,
