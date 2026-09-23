@@ -1,349 +1,224 @@
 import React, { useState, useEffect } from 'react';
-import { UtilityType, UserRole, SupplyRecord, FilterState, ToastMessage } from './types';
-import { INITIAL_ENERGY_RECORDS, INITIAL_WATER_RECORDS } from './data/mockData';
-import { TopAppBar } from './components/TopAppBar';
-import { BottomNavBar } from './components/BottomNavBar';
-import { KPIGrid } from './components/KPIGrid';
+import { SupplyRecord, UtilityType, UserRole, FilterState } from './types';
 import { ChartsSection } from './components/ChartsSection';
 import { DataTableSection } from './components/DataTableSection';
-import { RecordModal } from './components/RecordModal';
+import { SupplyModal } from './components/SupplyModal';
 import { ReceiptModal } from './components/ReceiptModal';
-import { DeleteConfirmModal } from './components/DeleteConfirmModal';
-import { FilterModal } from './components/FilterModal';
-import { ToastContainer } from './components/Toast';
-import { RotateCcw } from 'lucide-react';
+import { Zap, Droplet, User, ShieldCheck, CheckCircle2, AlertTriangle, Info } from 'lucide-react';
+
+const STORAGE_KEY = 'infradash_supply_records_v1';
+
+const initialDefaultRecords: SupplyRecord[] = [
+  {
+    id: '1',
+    utilityType: 'energy',
+    supplyNumber: 'SUM-88412',
+    propertyName: 'Vivienda Punta Arenas 01',
+    address: 'Punta Arenas 01',
+    category: 'Talara',
+    receiptNumber: 'REC-2026-001',
+    consumption: 320,
+    months: { ene: 150, feb: 160, mar: 155, abr: 170, may: 165, jun: 180, jul: 190, ago: 185, set: 175, oct: 160, nov: 155, dic: 195 },
+    totalAmount: 2000,
+    year: 2026,
+    debtMonths: [],
+    status: 'active'
+  } as any,
+  {
+    id: '2',
+    utilityType: 'water',
+    supplyNumber: 'WAT-55102',
+    propertyName: 'Vivienda Punta Arenas 02',
+    address: 'Punta Arenas 02',
+    category: 'Talara Alta',
+    receiptNumber: 'REC-2026-002',
+    consumption: 45,
+    months: { ene: 40, feb: 42, mar: 38, abr: 45, may: 44, jun: 46, jul: 50, ago: 48, set: 42, oct: 41, nov: 39, dic: 52 },
+    totalAmount: 529,
+    year: 2026,
+    debtMonths: [],
+    status: 'active'
+  } as any
+];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<UtilityType>('energy');
-  const [role, setRole] = useState<UserRole>('admin');
+  const [utilityType, setUtilityType] = useState<UtilityType>('energy');
+  const [role, setRole] = useState<any>('admin');
 
-  // Stored Records for Energy and Water (Persistencia intacta)
-  const [energyRecords, setEnergyRecords] = useState<SupplyRecord[]>(() => {
+  // Inicializar registros desde localStorage o usando los datos por defecto
+  const [records, setRecords] = useState<SupplyRecord[]>(() => {
     try {
-      const saved = localStorage.getItem('infradash_energy_records');
-      return saved ? JSON.parse(saved) : INITIAL_ENERGY_RECORDS;
-    } catch {
-      return INITIAL_ENERGY_RECORDS;
+      const savedData = localStorage.getItem(STORAGE_KEY);
+      if (savedData) {
+        return JSON.parse(savedData);
+      }
+    } catch (e) {
+      console.error('Error al cargar localStorage:', e);
     }
+    return initialDefaultRecords;
   });
 
-  const [waterRecords, setWaterRecords] = useState<SupplyRecord[]>(() => {
+  // Guardar automáticamente en localStorage ante cualquier cambio (a prueba de cortes)
+  useEffect(() => {
     try {
-      const saved = localStorage.getItem('infradash_water_records');
-      return saved ? JSON.parse(saved) : INITIAL_WATER_RECORDS;
-    } catch {
-      return INITIAL_WATER_RECORDS;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+    } catch (e) {
+      console.error('Error al guardar en localStorage:', e);
     }
-  });
+  }, [records]);
 
-  // Filters State
-  const [filters, setFilters] = useState<FilterState>({
-    search: '',
-    year: 'all',
-    debtFilter: 'all',
-    categoryFilter: 'all',
-    statusFilter: 'all'
-  });
+  const [filters, setFilters] = useState<any>({ search: '', category: 'ALL' });
+  const [toast, setToast] = useState<{ title: string; message: string; type: 'success' | 'warning' | 'info' | 'error' } | null>(null);
 
-  // Modal States
-  const [isRecordModalOpen, setIsRecordModalOpen] = useState(false);
-  const [editingRecord, setEditingRecord] = useState<SupplyRecord | null>(null);
+  const [isSupplyModalOpen, setIsSupplyModalOpen] = useState(false);
+  const [recordToEdit, setRecordToEdit] = useState<SupplyRecord | null>(null);
 
+  // Estados para el Modal de Recibos Inteligentes
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [selectedReceiptRecord, setSelectedReceiptRecord] = useState<SupplyRecord | null>(null);
+  const [activeMonthForReceipt, setActiveMonthForReceipt] = useState<string>('jul');
 
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [deletingRecord, setDeletingRecord] = useState<SupplyRecord | null>(null);
-
-  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
-
-  // Toast Notifications
-  const [toasts, setToasts] = useState<ToastMessage[]>([]);
-
-  // Sync to local storage
-  useEffect(() => {
-    try {
-      localStorage.setItem('infradash_energy_records', JSON.stringify(energyRecords));
-    } catch {}
-  }, [energyRecords]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('infradash_water_records', JSON.stringify(waterRecords));
-    } catch {}
-  }, [waterRecords]);
-
-  const showToast = (title: string, message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
-    const id = `toast-${Date.now()}-${Math.random()}`;
-    setToasts(prev => [...prev, { id, title, message, type }]);
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
-    }, 4500);
+  const showToast = (title: string, message: string, type: 'success' | 'warning' | 'info' | 'error' = 'success') => {
+    setToast({ title, message, type });
+    setTimeout(() => setToast(null), 4000);
   };
 
-  const dismissToast = (id: string) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
-  };
-
-  const rawRecords = activeTab === 'energy' ? energyRecords : waterRecords;
-
-  // ==========================================
-  // MOTOR DE FILTRADO AVANZADO Y BÚSQUEDA
-  // ==========================================
-  const currentRecords = rawRecords.filter(record => {
-    // 1. Filtro por Año de Ejercicio Fiscal
-    if (filters.year !== 'all' && Number(record.year) !== Number(filters.year)) {
-      return false;
-    }
-
-    // 2. Filtro por Estado Operativo (Activos / Inactivos)
-    if (filters.statusFilter !== 'all' && record.status !== filters.statusFilter) {
-      return false;
-    }
-
-    // 3. Filtro por Estado de Deuda / Morosidad
-    if (filters.debtFilter === 'with_debt' && (!record.debtMonths || record.debtMonths <= 0)) {
-      return false;
-    }
-    if (filters.debtFilter === 'no_debt' && record.debtMonths && record.debtMonths > 0) {
-      return false;
-    }
-
-    // 4. Filtro por Categoría de Instalación
-    if (filters.categoryFilter !== 'all' && record.category !== filters.categoryFilter) {
-      return false;
-    }
-
-    // 5. Filtro de Búsqueda por texto (Suministro, Predio, Recibo, etc.)
-    if (filters.search && filters.search.trim() !== '') {
-      const query = filters.search.toLowerCase();
-      const matchSupply = record.supplyNumber?.toLowerCase().includes(query);
-      const matchProperty = record.propertyName?.toLowerCase().includes(query);
-      const matchReceipt = record.receiptNumber?.toLowerCase().includes(query);
-      const matchCategory = record.category?.toLowerCase().includes(query);
-      if (!matchSupply && !matchProperty && !matchReceipt && !matchCategory) {
-        return false;
-      }
-    }
-
-    return true;
-  });
-
-  // CRUD Actions con Fusión Inteligente por N° de Suministro para evitar pérdida de meses
-  const handleSaveRecord = (record: SupplyRecord) => {
-    const updateRecordsList = (prevList: SupplyRecord[]) => {
-      const existingIndex = prevList.findIndex(
-        r => r.supplyNumber.trim().toLowerCase() === record.supplyNumber.trim().toLowerCase() && 
-             Number(r.year) === Number(record.year)
-      );
-
-      if (existingIndex >= 0) {
-        const existingRecord = prevList[existingIndex];
-        
-        const mergedMonths = {
-          ...existingRecord.months,
-          ...record.months
-        };
-
-        const totalSoles = Object.values(mergedMonths).reduce(
-          (acc, val) => acc + (Number(val) || 0), 0
-        );
-
-        const updatedRecord: SupplyRecord = {
-          ...existingRecord,
-          ...record,
-          id: existingRecord.id,
-          months: mergedMonths,
-          totalAmount: totalSoles
-        };
-
-        const updatedList = [...prevList];
-        updatedList[existingIndex] = updatedRecord;
-        return updatedList;
+  const handleSaveRecord = (savedRecord: SupplyRecord) => {
+    setRecords(prev => {
+      const exists = prev.some(r => r.id === savedRecord.id);
+      if (exists) {
+        return prev.map(r => r.id === savedRecord.id ? savedRecord : r);
       } else {
-        return [record, ...prevList];
+        return [savedRecord, ...prev];
       }
-    };
-
-    if (activeTab === 'energy') {
-      setEnergyRecords(prev => updateRecordsList(prev));
-    } else {
-      setWaterRecords(prev => updateRecordsList(prev));
-    }
-
-    showToast(
-      'Registro Guardado',
-      `Suministro ${record.supplyNumber} (${record.propertyName}) actualizado con éxito sin perder registros previos.`,
-      'success'
-    );
-  };
-
-  const handleDeleteRecord = () => {
-    if (!deletingRecord) return;
-    if (activeTab === 'energy') {
-      setEnergyRecords(prev => prev.filter(r => r.id !== deletingRecord.id));
-    } else {
-      setWaterRecords(prev => prev.filter(r => r.id !== deletingRecord.id));
-    }
-
-    showToast(
-      'Registro Eliminado',
-      `El suministro ${deletingRecord.supplyNumber} ha sido removido del sistema.`,
-      'warning'
-    );
-    setDeletingRecord(null);
-  };
-
-  const handleResetDemoData = () => {
-    setEnergyRecords(INITIAL_ENERGY_RECORDS);
-    setWaterRecords(INITIAL_WATER_RECORDS);
-    setFilters({
-      search: '',
-      year: 'all',
-      debtFilter: 'all',
-      categoryFilter: 'all',
-      statusFilter: 'all'
     });
-    showToast(
-      'Datos Restaurados',
-      'Se han reinicializado todos los registros a su estado original de fábrica.',
-      'info'
-    );
+    showToast('Guardado', `Suministro ${savedRecord.supplyNumber} actualizado correctamente.`, 'success');
+  };
+
+  const handleDeleteRecord = (record: SupplyRecord) => {
+    if (confirm(`¿Está seguro de eliminar el suministro ${record.supplyNumber}?`)) {
+      setRecords(prev => prev.filter(r => r.id !== record.id));
+      showToast('Eliminado', `Suministro ${record.supplyNumber} eliminado correctamente.`, 'info');
+    }
   };
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] text-[#191c1e] flex flex-col font-sans">
-      <TopAppBar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        role={role}
-        setRole={setRole}
-        onShowToast={showToast}
-      />
-
-      <main className="flex-1 max-w-[1600px] w-full mx-auto p-4 sm:p-6 pb-24 md:pb-8 flex flex-col gap-5">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-3">
+    <div className="min-h-screen bg-[#f8fafc] text-[#191c1e] flex flex-col font-sans antialiased">
+      {toast && (
+        <div className="fixed bottom-5 right-5 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700 animate-slide-up text-xs">
+          {toast.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+          {toast.type === 'warning' && <AlertTriangle className="w-4 h-4 text-amber-400" />}
+          {toast.type === 'info' && <Info className="w-4 h-4 text-blue-400" />}
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className={`w-3 h-3 rounded-full ${activeTab === 'energy' ? 'bg-[#004ac6]' : 'bg-[#00687a]'}`}></span>
-              <h1 className="text-2xl font-bold tracking-tight text-[#191c1e]">
-                {activeTab === 'energy' ? 'Consumo de Energía (Luz)' : 'Consumo de Agua'}
-              </h1>
-            </div>
-            <p className="text-xs text-[#434655]">
-              {activeTab === 'energy'
-                ? 'Vista general operativa de gastos eléctricos y predios corporativos.'
-                : 'Gestión y análisis de gasto hídrico e instalaciones.'}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 self-stretch sm:self-auto">
-            <button
-              onClick={handleResetDemoData}
-              className="px-3 py-1.5 bg-white border border-[#cbd5e1] hover:bg-[#f1f5f9] text-[#434655] rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-              title="Restablecer datos demo"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Restablecer Datos</span>
-            </button>
+            <p className="font-bold">{toast.title}</p>
+            <p className="text-slate-300">{toast.message}</p>
           </div>
         </div>
+      )}
 
-        <KPIGrid
-          utilityType={activeTab}
-          records={currentRecords}
-        />
+      <header className="bg-white border-b border-[#cbd5e1] px-6 py-4 sticky top-0 z-30 shadow-xs">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
+          <div className="flex items-center gap-3">
+            <div className="bg-[#004ac6] text-white p-2 rounded-xl shadow-sm">
+              <Zap className="w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="font-bold text-base text-[#191c1e]">Control de Suministros y Servicios (Infradash)</h1>
+              <p className="text-xs text-[#434655]">Gestión y Facturación de Viviendas - Punta Arenas / Talara</p>
+            </div>
+          </div>
 
+          <div className="flex items-center gap-3">
+            <div className="bg-slate-100 p-1 rounded-xl flex items-center text-xs">
+              <button
+                onClick={() => setRole('admin')}
+                className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  role === 'admin' ? 'bg-white text-[#004ac6] shadow-xs' : 'text-[#434655] hover:text-slate-900'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" /> Admin
+              </button>
+              <button
+                onClick={() => setRole('viewer')}
+                className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  role === 'viewer' ? 'bg-white text-[#004ac6] shadow-xs' : 'text-[#434655] hover:text-slate-900'
+                }`}
+              >
+                <User className="w-3.5 h-3.5" /> Lector
+              </button>
+            </div>
+
+            <div className="bg-slate-100 p-1 rounded-xl flex items-center text-xs">
+              <button
+                onClick={() => setUtilityType('energy')}
+                className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  utilityType === 'energy' ? 'bg-[#004ac6] text-white shadow-xs' : 'text-[#434655] hover:text-slate-900'
+                }`}
+              >
+                <Zap className="w-3.5 h-3.5" /> Energía
+              </button>
+              <button
+                onClick={() => setUtilityType('water')}
+                className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  utilityType === 'water' ? 'bg-[#00687a] text-white shadow-xs' : 'text-[#434655] hover:text-slate-900'
+                }`}
+              >
+                <Droplet className="w-3.5 h-3.5" /> Agua
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-6 py-6 flex-1 w-full flex flex-col gap-6">
         <ChartsSection
-          utilityType={activeTab}
-          records={rawRecords}
+          utilityType={utilityType}
+          records={records.filter(r => r.utilityType === utilityType)}
           onShowToast={showToast}
         />
 
         <DataTableSection
-          utilityType={activeTab}
+          records={records}
+          utilityType={utilityType}
           role={role}
-          records={currentRecords}
           filters={filters}
           setFilters={setFilters}
+          onShowToast={showToast}
           onOpenNewModal={() => {
-            setEditingRecord(null);
-            setIsRecordModalOpen(true);
+            setRecordToEdit(null);
+            setIsSupplyModalOpen(true);
           }}
-          onOpenEditModal={(record) => {
-            setEditingRecord(record);
-            setIsRecordModalOpen(true);
+          onOpenEditModal={(rec) => {
+            setRecordToEdit(rec);
+            setIsSupplyModalOpen(true);
           }}
-          onOpenDeleteModal={(record) => {
-            setDeletingRecord(record);
-            setIsDeleteModalOpen(true);
-          }}
-          onOpenReceiptModal={(record) => {
-            setSelectedReceiptRecord(record);
+          onOpenDeleteModal={handleDeleteRecord}
+          onOpenReceiptModal={(rec) => {
+            setSelectedReceiptRecord(rec);
+            setActiveMonthForReceipt((rec as any).selectedMonth || 'jul');
             setIsReceiptModalOpen(true);
           }}
-          onOpenFilterModal={() => setIsFilterModalOpen(true)}
-          onShowToast={showToast}
         />
       </main>
 
-      <BottomNavBar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-      />
-
-      <ToastContainer
-        toasts={toasts}
-        onDismiss={dismissToast}
-      />
-
-      <RecordModal
-        isOpen={isRecordModalOpen}
-        onClose={() => {
-          setIsRecordModalOpen(false);
-          setEditingRecord(null);
-        }}
+      {/* Modal para Crear / Editar Suministro */}
+      <SupplyModal
+        isOpen={isSupplyModalOpen}
+        onClose={() => setIsSupplyModalOpen(false)}
         onSave={handleSaveRecord}
-        editingRecord={editingRecord}
-        utilityType={activeTab}
-      />
-
-      <ReceiptModal
-        isOpen={isReceiptModalOpen}
-        onClose={() => {
-          setIsReceiptModalOpen(false);
-          setSelectedReceiptRecord(null);
-        }}
-        record={selectedReceiptRecord}
-        utilityType={activeTab}
+        recordToEdit={recordToEdit}
+        utilityType={utilityType}
         onShowToast={showToast}
       />
 
-      <DeleteConfirmModal
-        isOpen={isDeleteModalOpen}
-        onClose={() => {
-          setIsDeleteModalOpen(false);
-          setDeletingRecord(null);
-        }}
-        onConfirm={handleDeleteRecord}
-        record={deletingRecord}
-      />
-
-      <FilterModal
-        isOpen={isFilterModalOpen}
-        onClose={() => setIsFilterModalOpen(false)}
-        filters={filters}
-        setFilters={setFilters}
-        onReset={() => {
-          setFilters({
-            search: '',
-            year: 'all',
-            debtFilter: 'all',
-            categoryFilter: 'all',
-            statusFilter: 'all'
-          });
-          showToast('Filtros Restablecidos', 'Se muestran todos los registros disponibles.', 'info');
-        }}
+      {/* Modal Inteligente de Recibos por Mes */}
+      <ReceiptModal
+        isOpen={isReceiptModalOpen}
+        onClose={() => setIsReceiptModalOpen(false)}
+        record={selectedReceiptRecord}
+        activeMonthView={activeMonthForReceipt}
+        utilityType={utilityType}
+        onShowToast={showToast}
       />
     </div>
   );

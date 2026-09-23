@@ -17,7 +17,7 @@ interface DataTableSectionProps {
   [key: string]: any;
 }
 
-type ActiveMonthView = 'all' | 'jul' | 'ago' | 'set' | 'oct' | 'nov' | 'dic';
+type ActiveMonthView = 'all' | 'ene' | 'feb' | 'mar' | 'abr' | 'may' | 'jun' | 'jul' | 'ago' | 'set' | 'oct' | 'nov' | 'dic';
 
 export const DataTableSection: React.FC<DataTableSectionProps> = ({
   records,
@@ -67,7 +67,7 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
     return `S/ ${Number(val).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
-  // Función para exportar a Excel
+  // Exportar a Excel con los 12 meses
   const handleExportToExcel = () => {
     if (filteredRecords.length === 0) {
       if (onShowToast) {
@@ -80,7 +80,7 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
 
     const headers = [
       'Nro Suministro', 'Predio / Sede', 'Categoria', 'Nro Recibo', 
-      `Consumo (${unitLabel})`, 'Jul', 'Ago', 'Set', 'Oct', 'Nov', 'Dic', 'Total Facturado'
+      `Consumo (${unitLabel})`, 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Set', 'Oct', 'Nov', 'Dic', 'Total Facturado'
     ];
     
     const rows = filteredRecords.map(r => [
@@ -89,6 +89,12 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
       `"${r.category || ''}"`,
       r.receiptNumber || 'S/N',
       r.consumption || 0,
+      r.months?.ene || 0,
+      r.months?.feb || 0,
+      r.months?.mar || 0,
+      r.months?.abr || 0,
+      r.months?.may || 0,
+      r.months?.jun || 0,
       r.months?.jul || 0,
       r.months?.ago || 0,
       r.months?.set || 0,
@@ -103,7 +109,7 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `Reporte_${utilityType === 'energy' ? 'Energia_Electrica' : 'Agua_Potable'}_2026_S2.csv`);
+    link.setAttribute('download', `Reporte_${utilityType === 'energy' ? 'Energia_Electrica' : 'Agua_Potable'}_Anual.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -113,13 +119,29 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
     }
   };
 
+  const monthsList: { key: ActiveMonthView; label: string }[] = [
+    { key: 'all', label: 'Año Completo' },
+    { key: 'ene', label: 'Ene' },
+    { key: 'feb', label: 'Feb' },
+    { key: 'mar', label: 'Mar' },
+    { key: 'abr', label: 'Abr' },
+    { key: 'may', label: 'May' },
+    { key: 'jun', label: 'Jun' },
+    { key: 'jul', label: 'Jul' },
+    { key: 'ago', label: 'Ago' },
+    { key: 'set', label: 'Set' },
+    { key: 'oct', label: 'Oct' },
+    { key: 'nov', label: 'Nov' },
+    { key: 'dic', label: 'Dic' }
+  ];
+
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8">
       {/* Encabezado y Controles */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
         <div>
           <h2 className="text-lg font-bold text-gray-900">
-            Registros de {utilityType === 'energy' ? 'Energía Eléctrica' : 'Agua Potable'} (2do Semestre)
+            Registros de {utilityType === 'energy' ? 'Energía Eléctrica' : 'Agua Potable'}
           </h2>
           <p className="text-xs text-gray-500">
             Mostrando {filteredRecords.length} suministros registrados en el sistema
@@ -179,24 +201,16 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
         </div>
       </div>
 
-      {/* Barra de Enfoque por Mes (Control visual agregado para mayor claridad) */}
-      <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-100 overflow-x-auto">
-        <span className="text-xs font-semibold text-gray-600 flex items-center gap-1 mr-2">
-          <Calendar className="w-3.5 h-3.5 text-blue-600" /> Enfocar Vista:
+      {/* Barra de Enfoque por Mes (Con scroll horizontal fluido para los 12 meses) */}
+      <div className="flex items-center gap-1.5 mb-4 pb-3 border-b border-gray-100 overflow-x-auto">
+        <span className="text-xs font-semibold text-gray-600 flex items-center gap-1 mr-2 shrink-0">
+          <Calendar className="w-3.5 h-3.5 text-blue-600" /> Vista:
         </span>
-        {[
-          { key: 'all', label: 'Todos los Meses' },
-          { key: 'jul', label: 'Julio' },
-          { key: 'ago', label: 'Agosto' },
-          { key: 'set', label: 'Setiembre' },
-          { key: 'oct', label: 'Octubre' },
-          { key: 'nov', label: 'Noviembre' },
-          { key: 'dic', label: 'Diciembre' }
-        ].map((m) => (
+        {monthsList.map((m) => (
           <button
             key={m.key}
-            onClick={() => setSelectedMonthView(m.key as ActiveMonthView)}
-            className={`px-3 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap ${
+            onClick={() => setSelectedMonthView(m.key)}
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap ${
               selectedMonthView === m.key
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -218,12 +232,12 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
               <th className="p-3 text-center border-r border-gray-200">N° RECIBO</th>
               <th className="p-3 text-center border-r border-gray-200">CONSUMO ({unitLabel})</th>
               
-              {/* Columnas dinámicas según el foco de mes */}
-              <th colSpan={selectedMonthView === 'all' ? 6 : 1} className="p-3 text-center border-r border-gray-200 bg-blue-50/50 text-blue-900 font-bold">
-                {selectedMonthView === 'all' ? 'DETALLE DE CONSUMOS JUL - DIC (S/)' : `MONTO FACTURADO - ${selectedMonthView.toUpperCase()}`}
+              {/* Columna dinámica superior */}
+              <th colSpan={selectedMonthView === 'all' ? 12 : 1} className="p-3 text-center border-r border-gray-200 bg-blue-50/50 text-blue-900 font-bold">
+                {selectedMonthView === 'all' ? 'DETALLE DE CONSUMOS ANUAL (ENE - DIC)' : `MONTO FACTURADO - ${selectedMonthView.toUpperCase()}`}
               </th>
               
-              <th className="p-3 text-right border-r border-gray-200">TOTAL FACTURADO</th>
+              <th className="p-3 text-right border-r border-gray-200">TOTAL ANUAL</th>
               <th className="p-3 text-center">ACCIONES</th>
             </tr>
 
@@ -235,12 +249,11 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
                 <th className="p-2 border-r border-gray-200"></th>
                 <th className="p-2 border-r border-gray-200"></th>
 
-                <th className="p-2 text-right border-r border-gray-100 w-20">JUL</th>
-                <th className="p-2 text-right border-r border-gray-100 w-20">AGO</th>
-                <th className="p-2 text-right border-r border-gray-100 w-20">SET</th>
-                <th className="p-2 text-right border-r border-gray-100 w-20">OCT</th>
-                <th className="p-2 text-right border-r border-gray-100 w-20">NOV</th>
-                <th className="p-2 text-right border-r border-gray-200 w-20">DIC</th>
+                {['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'set', 'oct', 'nov', 'dic'].map((mKey, i) => (
+                  <th key={mKey} className={`p-2 text-right border-r w-16 uppercase ${i === 11 ? 'border-gray-200' : 'border-gray-100'}`}>
+                    {mKey}
+                  </th>
+                ))}
 
                 <th className="p-2 border-r border-gray-200"></th>
                 <th className="p-2"></th>
@@ -251,7 +264,7 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
           <tbody className="divide-y divide-gray-100 text-gray-700">
             {paginatedRecords.length === 0 ? (
               <tr>
-                <td colSpan={13} className="p-8 text-center text-gray-400">
+                <td colSpan={19} className="p-8 text-center text-gray-400">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <AlertCircle className="w-8 h-8 text-gray-300" />
                     <p>No se encontraron registros para esta selección.</p>
@@ -279,30 +292,17 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
                     {record.consumption ? `${record.consumption} ${unitLabel}` : '-'}
                   </td>
 
-                  {/* Renderizado condicional de celdas según el filtro de mes seleccionado */}
+                  {/* Renderizado de los 12 meses o del mes seleccionado con el blindaje seguro */}
                   {selectedMonthView === 'all' ? (
                     <>
-                      <td className="p-3 text-right font-mono border-r border-gray-100 text-gray-600">
-                        {record.months?.jul !== undefined ? formatCurrency(record.months.jul) : '-'}
-                      </td>
-                      <td className="p-3 text-right font-mono border-r border-gray-100 text-gray-600">
-                        {record.months?.ago !== undefined ? formatCurrency(record.months.ago) : '-'}
-                      </td>
-                      <td className="p-3 text-right font-mono border-r border-gray-100 text-gray-600">
-                        {record.months?.set !== undefined ? formatCurrency(record.months.set) : '-'}
-                      </td>
-                      <td className="p-3 text-right font-mono border-r border-gray-100 text-gray-600">
-                        {record.months?.oct !== undefined ? formatCurrency(record.months.oct) : '-'}
-                      </td>
-                      <td className="p-3 text-right font-mono border-r border-gray-100 text-gray-600">
-                        {record.months?.nov !== undefined ? formatCurrency(record.months.nov) : '-'}
-                      </td>
-                      <td className="p-3 text-right font-mono border-r border-gray-200 text-gray-600">
-                        {record.months?.dic !== undefined ? formatCurrency(record.months.dic) : '-'}
-                      </td>
+                      {(['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'set', 'oct', 'nov', 'dic'] as const).map((mKey, i) => (
+                        <td key={mKey} className={`p-2 text-right font-mono text-[11px] text-gray-600 border-r ${i === 11 ? 'border-gray-200' : 'border-gray-100'}`}>
+                          {record.months?.[mKey] !== undefined ? formatCurrency(record.months[mKey]) : '-'}
+                        </td>
+                      ))}
                     </>
                   ) : (
-                    <td className="p-3 text-right font-mono font-bold text-blue-700 border-r border-gray-200 bg-blue-50/20">
+                    <td className="p-3 text-right font-mono font-bold text-blue-700 border-r border-gray-200 bg-blue-50/25">
                       {formatCurrency(record.months?.[selectedMonthView as keyof typeof record.months])}
                     </td>
                   )}
@@ -367,7 +367,7 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
               setItemsPerPage(Number(e.target.value));
               setCurrentPage(1);
             }}
-            className="border border-gray-200 rounded px-2 py-1 bg-white focus:ring-1 focus:ring-blue-500"
+            className="border border-gray-200 rounded px-2 py-1 bg-white focus:ring-1 focus:ring-blue-500 cursor-pointer"
           >
             <option value={5}>5</option>
             <option value={10}>10</option>
