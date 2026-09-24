@@ -11,7 +11,6 @@ interface ReceiptModalProps {
   activeMonthView?: string;
 }
 
-// Diccionario de meses para mostrar el nombre completo limpio
 const MONTH_NAMES_MAP: { [key: string]: string } = {
   ene: 'Enero',
   feb: 'Febrero',
@@ -40,15 +39,13 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   const isEnergy = utilityType === 'energy';
   const unitLabel = isEnergy ? 'kWh' : 'm³';
 
-  // Sincronización y cálculo de lecturas y consumo
   const prevReading = (record as any).previousReading ?? 0;
   const currReading = (record as any).currentReading ?? 0;
   const calculatedConsumption = currReading >= prevReading ? currReading - prevReading : (record.consumption ?? 0);
 
-  // Determinar el mes exacto de forma segura:
   let rawSelectedMonth = 'jul';
 
-  if ((record as any).selectedMonth) {
+  if ((record as any).selectedMonth && (record as any).selectedMonth !== 'all') {
     rawSelectedMonth = (record as any).selectedMonth;
   } else if (activeMonthView && activeMonthView !== 'all') {
     rawSelectedMonth = activeMonthView;
@@ -65,13 +62,12 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
 
   const displayMonthName = MONTH_NAMES_MAP[rawSelectedMonth.toLowerCase()] || rawSelectedMonth.toUpperCase();
 
-  // Obtener el monto específico del mes desde el objeto months
   const monthValue = record.months?.[rawSelectedMonth.toLowerCase() as keyof typeof record.months];
   const effectiveAmount = monthValue !== undefined && monthValue !== null && Number(monthValue) > 0 
     ? Number(monthValue) 
     : (record.amount || record.totalAmount || 0);
 
-  const formatCurrency = (val: number) => {
+  const formatCurrency = (val: number): string => {
     return `S/ ${Number(val).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
@@ -94,7 +90,6 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         
-        {/* Cabecera del Modal */}
         <div className={`p-5 flex items-center justify-between text-white ${isEnergy ? 'bg-gradient-to-r from-blue-700 to-blue-900' : 'bg-gradient-to-r from-cyan-600 to-teal-700'}`}>
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-white/15 rounded-xl backdrop-blur-md">
@@ -108,7 +103,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                 <span>Suministro N°: <strong className="font-mono">{record.supplyNumber}</strong></span>
                 <span>•</span>
                 <span className="inline-flex items-center gap-1 bg-white/20 px-2 py-0.5 rounded text-[11px] font-semibold">
-                  <Calendar className="w-3 h-3" /> Periodo: {displayMonthName} {record.year || 2026}
+                  <Calendar className="w-3 h-3" /> Periodo: {displayMonthName} {(record as any).year || 2026}
                 </span>
               </p>
             </div>
@@ -122,10 +117,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           </button>
         </div>
 
-        {/* Cuerpo del Recibo */}
         <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto text-gray-700 text-xs">
           
-          {/* Información General del Predio */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-xl border border-gray-100">
             <div>
               <span className="text-gray-400 block mb-0.5 uppercase tracking-wider text-[10px] font-bold">Predio / Sede</span>
@@ -142,7 +135,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             </div>
             <div>
               <span className="text-gray-400 block mb-0.5 uppercase tracking-wider text-[10px] font-bold">N° de Medidor / Suministro</span>
-              <span className="font-mono font-semibold text-gray-800">{record.meterId || record.supplyNumber}</span>
+              <span className="font-mono font-semibold text-gray-800">{(record as any).meterId || record.supplyNumber}</span>
             </div>
             <div>
               <span className="text-gray-400 block mb-0.5 uppercase tracking-wider text-[10px] font-bold">N° de Comprobante / Recibo</span>
@@ -150,7 +143,6 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             </div>
           </div>
 
-          {/* Bloque de Lecturas y Consumo Real */}
           <div className="border border-blue-100 bg-blue-50/30 rounded-xl p-4">
             <h4 className="font-bold text-blue-900 mb-3 flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
               <FileText className="w-4 h-4 text-blue-600" />
@@ -175,7 +167,6 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             </div>
           </div>
 
-          {/* Desglose Financiero */}
           <div className="space-y-2 border-t border-gray-100 pt-4">
             <div className="flex justify-between items-center py-1">
               <span className="text-gray-500 font-medium">Concepto de Facturación ({displayMonthName}):</span>
@@ -197,7 +188,6 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             </div>
           </div>
 
-          {/* Estado de pago */}
           <div className="flex items-center justify-between bg-gray-50 p-3 rounded-xl border border-gray-100">
             <span className="text-gray-500 font-semibold">Estado Actual del Recibo:</span>
             {(record.debtMonths || 0) > 0 ? (
@@ -213,7 +203,6 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
 
         </div>
 
-        {/* Pie de Acciones */}
         <div className="p-4 bg-gray-50 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-3">
           <button
             onClick={onClose}

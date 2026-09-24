@@ -17,7 +17,6 @@ const initialDefaultRecords: SupplyRecord[] = [
     address: 'Punta Arenas 01',
     category: 'Talara',
     receiptNumber: 'REC-2026-001',
-    consumption: 320,
     months: { ene: 150, feb: 160, mar: 155, abr: 170, may: 165, jun: 180, jul: 190, ago: 185, set: 175, oct: 160, nov: 155, dic: 195 },
     totalAmount: 2000,
     year: 2026,
@@ -32,7 +31,6 @@ const initialDefaultRecords: SupplyRecord[] = [
     address: 'Punta Arenas 02',
     category: 'Talara Alta',
     receiptNumber: 'REC-2026-002',
-    consumption: 45,
     months: { ene: 40, feb: 42, mar: 38, abr: 45, may: 44, jun: 46, jul: 50, ago: 48, set: 42, oct: 41, nov: 39, dic: 52 },
     totalAmount: 529,
     year: 2026,
@@ -43,14 +41,17 @@ const initialDefaultRecords: SupplyRecord[] = [
 
 export default function App() {
   const [utilityType, setUtilityType] = useState<UtilityType>('energy');
-  const [role, setRole] = useState<any>('admin');
+  const [role, setRole] = useState<UserRole>('admin');
 
-  // Inicializar registros desde localStorage o usando los datos por defecto
+  // Inicializar registros desde localStorage o usando los datos por defecto limpios
   const [records, setRecords] = useState<SupplyRecord[]>(() => {
     try {
       const savedData = localStorage.getItem(STORAGE_KEY);
       if (savedData) {
-        return JSON.parse(savedData);
+        const parsed = JSON.parse(savedData);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
       }
     } catch (e) {
       console.error('Error al cargar localStorage:', e);
@@ -58,7 +59,7 @@ export default function App() {
     return initialDefaultRecords;
   });
 
-  // Guardar automáticamente en localStorage ante cualquier cambio (a prueba de cortes)
+  // Guardar automáticamente en localStorage ante cualquier cambio
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
@@ -67,7 +68,7 @@ export default function App() {
     }
   }, [records]);
 
-  const [filters, setFilters] = useState<any>({ search: '', category: 'ALL' });
+  const [filters, setFilters] = useState<FilterState>({ search: '', year: 'all', debtFilter: 'all', categoryFilter: 'ALL', statusFilter: 'all' });
   const [toast, setToast] = useState<{ title: string; message: string; type: 'success' | 'warning' | 'info' | 'error' } | null>(null);
 
   const [isSupplyModalOpen, setIsSupplyModalOpen] = useState(false);
@@ -139,9 +140,9 @@ export default function App() {
                 <ShieldCheck className="w-3.5 h-3.5" /> Admin
               </button>
               <button
-                onClick={() => setRole('viewer')}
+                onClick={() => setRole('consult')}
                 className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-                  role === 'viewer' ? 'bg-white text-[#004ac6] shadow-xs' : 'text-[#434655] hover:text-slate-900'
+                  role === 'consult' ? 'bg-white text-[#004ac6] shadow-xs' : 'text-[#434655] hover:text-slate-900'
                 }`}
               >
                 <User className="w-3.5 h-3.5" /> Lector

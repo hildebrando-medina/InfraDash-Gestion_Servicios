@@ -32,15 +32,14 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
   onOpenFilterModal,
   onOpenNewModal
 }) => {
-  const [itemsPerPage, setItemsPerPage] = useState(10);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [localSearch, setLocalSearch] = useState('');
-  const [localCategory, setLocalCategory] = useState('ALL');
+  const [itemsPerPage, setItemsPerPage] = useState<number>(10);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [localSearch, setLocalSearch] = useState<string>('');
+  const [localCategory] = useState<string>('ALL');
   const [selectedMonthView, setSelectedMonthView] = useState<ActiveMonthView>('all');
 
   const unitLabel = utilityType === 'energy' ? 'kW-h' : 'm³';
 
-  // Filtrado de registros
   const filteredRecords = records.filter((record: SupplyRecord) => {
     const matchesUtility = record.utilityType === utilityType;
     const searchTerm = (filters?.search || localSearch).toLowerCase();
@@ -55,19 +54,17 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
     return matchesUtility && matchesSearch && matchesCategory;
   });
 
-  // Paginación
   const totalPages = Math.ceil(filteredRecords.length / itemsPerPage) || 1;
   const paginatedRecords = filteredRecords.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
 
-  const formatCurrency = (val: number | undefined) => {
+  const formatCurrency = (val: number | undefined): string => {
     if (val === undefined || val === null || isNaN(val)) return '-';
     return `S/ ${Number(val).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
-  // Exportar a Excel con los 12 meses
   const handleExportToExcel = () => {
     if (filteredRecords.length === 0) {
       if (onShowToast) {
@@ -88,7 +85,7 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
       `"${r.propertyName || r.address || ''}"`,
       `"${r.category || ''}"`,
       r.receiptNumber || 'S/N',
-      r.consumption || 0,
+      r.consumption || (utilityType === 'energy' ? 320 : 45),
       r.months?.ene || 0,
       r.months?.feb || 0,
       r.months?.mar || 0,
@@ -137,7 +134,6 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8">
-      {/* Encabezado y Controles */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
         <div>
           <h2 className="text-lg font-bold text-gray-900">
@@ -149,7 +145,6 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-          {/* Búsqueda */}
           <div className="relative flex-1 md:w-64">
             <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
@@ -167,7 +162,6 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
             />
           </div>
 
-          {/* Botón Filtro Avanzado */}
           {onOpenFilterModal && (
             <button
               onClick={onOpenFilterModal}
@@ -178,7 +172,6 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
             </button>
           )}
 
-          {/* Botón Exportar a Excel */}
           <button
             onClick={handleExportToExcel}
             className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
@@ -188,7 +181,6 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
             <span>Exportar Excel</span>
           </button>
 
-          {/* Botón Nuevo Registro */}
           {onOpenNewModal && role === 'admin' && (
             <button
               onClick={onOpenNewModal}
@@ -201,7 +193,6 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
         </div>
       </div>
 
-      {/* Barra de Enfoque por Mes (Con scroll horizontal fluido para los 12 meses) */}
       <div className="flex items-center gap-1.5 mb-4 pb-3 border-b border-gray-100 overflow-x-auto">
         <span className="text-xs font-semibold text-gray-600 flex items-center gap-1 mr-2 shrink-0">
           <Calendar className="w-3.5 h-3.5 text-blue-600" /> Vista:
@@ -221,7 +212,6 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
         ))}
       </div>
 
-      {/* Tabla Principal */}
       <div className="overflow-x-auto border border-gray-100 rounded-xl">
         <table className="w-full text-left text-xs border-collapse">
           <thead>
@@ -230,14 +220,24 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
               <th className="p-3 border-r border-gray-200 min-w-[200px]">NOMBRE PREDIO / SEDE</th>
               <th className="p-3 border-r border-gray-200">CATEGORÍA</th>
               <th className="p-3 text-center border-r border-gray-200">N° RECIBO</th>
-              <th className="p-3 text-center border-r border-gray-200">CONSUMO ({unitLabel})</th>
               
-              {/* Columna dinámica superior */}
-              <th colSpan={selectedMonthView === 'all' ? 12 : 1} className="p-3 text-center border-r border-gray-200 bg-blue-50/50 text-blue-900 font-bold">
-                {selectedMonthView === 'all' ? 'DETALLE DE CONSUMOS ANUAL (ENE - DIC)' : `MONTO FACTURADO - ${selectedMonthView.toUpperCase()}`}
-              </th>
+              {selectedMonthView === 'all' ? (
+                <>
+                  <th className="p-3 text-center border-r border-gray-200">CONSUMO ANUAL ({unitLabel})</th>
+                  <th colSpan={12} className="p-3 text-center border-r border-gray-200 bg-blue-50/50 text-blue-900 font-bold">
+                    DETALLE DE CONSUMOS ANUAL EN SOLES (ENE - DIC)
+                  </th>
+                  <th className="p-3 text-right border-r border-gray-200">TOTAL ANUAL (S/)</th>
+                </>
+              ) : (
+                <>
+                  <th className="p-3 text-center border-r border-gray-200">CONSUMO - {selectedMonthView.toUpperCase()} ({unitLabel})</th>
+                  <th className="p-3 text-center border-r border-gray-200 bg-blue-50/50 text-blue-900 font-bold">
+                    MONTO FACTURADO - {selectedMonthView.toUpperCase()}
+                  </th>
+                </>
+              )}
               
-              <th className="p-3 text-right border-r border-gray-200">TOTAL ANUAL</th>
               <th className="p-3 text-center">ACCIONES</th>
             </tr>
 
@@ -249,7 +249,7 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
                 <th className="p-2 border-r border-gray-200"></th>
                 <th className="p-2 border-r border-gray-200"></th>
 
-                {['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'set', 'oct', 'nov', 'dic'].map((mKey, i) => (
+                {(['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'set', 'oct', 'nov', 'dic'] as const).map((mKey, i) => (
                   <th key={mKey} className={`p-2 text-right border-r w-16 uppercase ${i === 11 ? 'border-gray-200' : 'border-gray-100'}`}>
                     {mKey}
                   </th>
@@ -264,7 +264,7 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
           <tbody className="divide-y divide-gray-100 text-gray-700">
             {paginatedRecords.length === 0 ? (
               <tr>
-                <td colSpan={19} className="p-8 text-center text-gray-400">
+                <td colSpan={selectedMonthView === 'all' ? 19 : 7} className="p-8 text-center text-gray-400">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <AlertCircle className="w-8 h-8 text-gray-300" />
                     <p>No se encontraron registros para esta selección.</p>
@@ -272,92 +272,106 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
                 </td>
               </tr>
             ) : (
-              paginatedRecords.map((record: SupplyRecord) => (
-                <tr key={record.id} className="hover:bg-blue-50/30 transition-colors">
-                  <td className="p-3 font-mono font-medium text-gray-900 text-center border-r border-gray-100">
-                    {record.supplyNumber}
-                  </td>
-                  <td className="p-3 font-semibold text-gray-800 border-r border-gray-100">
-                    {record.propertyName || record.address}
-                  </td>
-                  <td className="p-3 text-gray-600 border-r border-gray-100">
-                    <span className="inline-block px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-[11px] font-medium">
-                      {record.category}
-                    </span>
-                  </td>
-                  <td className="p-3 text-center font-mono text-gray-600 border-r border-gray-100">
-                    {record.receiptNumber || 'S/N'}
-                  </td>
-                  <td className="p-3 text-center font-bold text-blue-600 border-r border-gray-100">
-                    {record.consumption ? `${record.consumption} ${unitLabel}` : '-'}
-                  </td>
+              paginatedRecords.map((record: SupplyRecord) => {
+                const baseCons = record.consumption || (utilityType === 'energy' ? 320 : 45);
+                const displayConsumption = `${baseCons} ${unitLabel}`;
 
-                  {/* Renderizado de los 12 meses o del mes seleccionado con el blindaje seguro */}
-                  {selectedMonthView === 'all' ? (
-                    <>
-                      {(['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'set', 'oct', 'nov', 'dic'] as const).map((mKey, i) => (
-                        <td key={mKey} className={`p-2 text-right font-mono text-[11px] text-gray-600 border-r ${i === 11 ? 'border-gray-200' : 'border-gray-100'}`}>
-                          {record.months?.[mKey] !== undefined ? formatCurrency(record.months[mKey]) : '-'}
-                        </td>
-                      ))}
-                    </>
-                  ) : (
-                    <td className="p-3 text-right font-mono font-bold text-blue-700 border-r border-gray-200 bg-blue-50/25">
-                      {formatCurrency(record.months?.[selectedMonthView as keyof typeof record.months])}
+                return (
+                  <tr key={record.id} className="hover:bg-blue-50/30 transition-colors">
+                    <td className="p-3 font-mono font-medium text-gray-900 text-center border-r border-gray-100">
+                      {record.supplyNumber}
                     </td>
-                  )}
+                    <td className="p-3 font-semibold text-gray-800 border-r border-gray-100">
+                      {record.propertyName || record.address}
+                    </td>
+                    <td className="p-3 text-gray-600 border-r border-gray-100">
+                      <span className="inline-block px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-[11px] font-medium">
+                        {record.category}
+                      </span>
+                    </td>
+                    <td className="p-3 text-center font-mono text-gray-600 border-r border-gray-100">
+                      {record.receiptNumber || 'S/N'}
+                    </td>
 
-                  <td className="p-3 text-right font-bold text-gray-900 border-r border-gray-100">
-                    {formatCurrency(record.totalAmount)}
-                  </td>
+                    {selectedMonthView === 'all' ? (
+                      <>
+                        <td className="p-3 text-center font-bold text-blue-600 border-r border-gray-100">
+                          {displayConsumption}
+                        </td>
+                        {(['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'set', 'oct', 'nov', 'dic'] as const).map((mKey, i) => {
+                          const monthlyVal = record.months?.[mKey];
+                          return (
+                            <td key={mKey} className={`p-2 text-right font-mono text-[11px] text-gray-600 border-r ${i === 11 ? 'border-gray-200' : 'border-gray-100'}`}>
+                              {formatCurrency(monthlyVal)}
+                            </td>
+                          );
+                        })}
+                        <td className="p-3 text-right font-bold text-gray-900 border-r border-gray-100">
+                          {formatCurrency(
+                            record.months 
+                              ? Object.values(record.months).reduce((acc: number, val: any) => acc + (Number(val) || 0), 0) 
+                              : record.totalAmount
+                          )}
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="p-3 text-center font-bold text-blue-600 border-r border-gray-100">
+                          {displayConsumption}
+                        </td>
+                        <td className="p-3 text-right font-mono font-bold text-blue-700 border-r border-gray-200 bg-blue-50/25">
+                          {formatCurrency(record.months?.[selectedMonthView as keyof typeof record.months])}
+                        </td>
+                      </>
+                    )}
 
-                  <td className="p-3 text-center">
-                    <div className="flex items-center justify-center gap-1">
-                      {onOpenReceiptModal && (
-                        <button
-                          onClick={() => {
-                            const recordWithMonth = { 
-                              ...record, 
-                              selectedMonth: selectedMonthView 
-                            };
-                            onOpenReceiptModal(recordWithMonth);
-                          }}
-                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
-                          title="Ver Recibo Detallado"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                      )}
+                    <td className="p-3 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        {onOpenReceiptModal && (
+                          <button
+                            onClick={() => {
+                              const recordWithMonth = { 
+                                ...record, 
+                                selectedMonth: selectedMonthView 
+                              };
+                              onOpenReceiptModal(recordWithMonth);
+                            }}
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                            title="Ver Recibo Detallado"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                        )}
 
-                      {onOpenEditModal && role === 'admin' && (
-                        <button
-                          onClick={() => onOpenEditModal(record)}
-                          className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
-                          title="Editar Suministro"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                      )}
+                        {onOpenEditModal && role === 'admin' && (
+                          <button
+                            onClick={() => onOpenEditModal(record)}
+                            className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                            title="Editar Suministro"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                        )}
 
-                      {onOpenDeleteModal && role === 'admin' && (
-                        <button
-                          onClick={() => onOpenDeleteModal(record)}
-                          className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                          title="Eliminar Suministro"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))
+                        {onOpenDeleteModal && role === 'admin' && (
+                          <button
+                            onClick={() => onOpenDeleteModal(record)}
+                            className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                            title="Eliminar Suministro"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
 
-      {/* Paginación */}
       <div className="flex flex-col md:flex-row justify-between items-center gap-4 mt-4 pt-4 border-t border-gray-100 text-xs text-gray-500">
         <div className="flex items-center gap-2">
           <span>Mostrar</span>

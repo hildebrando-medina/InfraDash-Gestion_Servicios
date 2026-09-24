@@ -38,6 +38,13 @@ export interface SupplyRecord {
   consumption?: number;
   amount?: number;
   selectedMonth?: string;
+  monthlyDetails?: Record<string, {
+    receipt: string;
+    previousReading: number;
+    currentReading: number;
+    consumption: number;
+    amount: number;
+  }>;
 }
 
 export interface FilterState {

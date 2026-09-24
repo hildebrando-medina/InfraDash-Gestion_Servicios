@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { SupplyRecord, UtilityType } from '../types';
-import { Download, MoreVertical, Share2, Printer, TrendingUp, Building2 } from 'lucide-react';
+import { FileSpreadsheet, MoreVertical, Mail, Printer, TrendingUp, Building2, Share2 } from 'lucide-react';
 
 interface ChartsSectionProps {
   utilityType: UtilityType;
@@ -32,6 +32,54 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({ utilityType, recor
     .sort((a, b) => b.total - a.total)
     .slice(0, 5);
 
+  // 1. Descarga real y útil de datos estructurados en formato CSV/Excel con codificación UTF-8
+  const handleDownloadExcel = (chartTitle: string, typeData: 'evolution' | 'top') => {
+    setOpenMenu(null);
+    let headers: string[] = [];
+    let rows: string[][] = [];
+
+    if (typeData === 'evolution') {
+      headers = ['Mes', 'Gasto Total Facturado (S/)'];
+      rows = monthKeys.map((m, idx) => [monthLabels[idx], (monthlyTotals[idx] || 0).toFixed(2)]);
+    } else {
+      headers = ['N°', 'Predio / Sede', 'Gasto Anual Acumulado (S/)'];
+      rows = topProperties.map((p, idx) => [(idx + 1).toString(), `"${p.name}"`, p.total.toFixed(2)]);
+    }
+
+    const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map(e => e.join(';'))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Reporte_${chartTitle.replace(/\s+/g, '_')}_${utilityType}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    onShowToast('Exportación Exitosa', `Los datos de "${chartTitle}" se descargaron en formato Excel/CSV.`, 'success');
+  };
+
+  // 2. Compartir por correo técnico redactando los montos clave para otros técnicos
+  const handleShareEmail = (chartTitle: string) => {
+    setOpenMenu(null);
+    const utilityName = utilityType === 'energy' ? 'Energía Eléctrica' : 'Agua Potable';
+    const subject = encodeURIComponent(`Reporte Técnico: ${chartTitle} - ${utilityName}`);
+    
+    let bodyText = `Estimado equipo técnico,\n\nSe comparte el resumen consolidado del indicador de ${utilityName} (${chartTitle}):\n`;
+    if (chartTitle.includes('Evolución')) {
+      bodyText += `- Gasto Anual Total: S/ ${totalAnnual.toFixed(2)}\n- Promedio Mensual: S/ ${averageMonthly.toFixed(2)}\n`;
+    } else {
+      bodyText += topProperties.map((p, i) => `${i + 1}. ${p.name}: S/ ${p.total.toFixed(2)}`).join('\n');
+    }
+    bodyText += `\n\nGenerado desde el sistema de control de suministros.`;
+
+    const mailtoLink = `mailto:?subject=${subject}&body=${encodeURIComponent(bodyText)}`;
+    window.location.href = mailtoLink;
+
+    onShowToast('Correo Preparado', 'Se abrió su cliente de correo para enviar los datos a los técnicos.', 'info');
+  };
+
+  // 3. Acción auxiliar para copiar enlace o imprimir si se requiere en vista general
   const handleAction = (chartName: string, action: string) => {
     setOpenMenu(null);
     if (action === 'imprimir') {
@@ -39,8 +87,6 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({ utilityType, recor
     } else if (action === 'compartir') {
       navigator.clipboard.writeText(window.location.href);
       onShowToast('Enlace Copiado', `Enlace de vista de ${chartName} copiado al portapapeles.`, 'info');
-    } else {
-      onShowToast('Exportación iniciada', `Procesando descarga de ${chartName}...`, 'success');
     }
   };
 
@@ -64,15 +110,15 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({ utilityType, recor
               <MoreVertical className="w-4 h-4" />
             </button>
             {openMenu === 'evolution' && (
-              <div className="absolute right-0 top-8 bg-white border border-[#cbd5e1] rounded-lg shadow-lg py-1 w-40 z-20 text-xs">
-                <button onClick={() => handleAction('Evolución Mensual', 'descargar')} className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 cursor-pointer">
-                  <Download className="w-3.5 h-3.5" /> Descargar PNG
+              <div className="absolute right-0 top-8 bg-white border border-[#cbd5e1] rounded-lg shadow-lg py-1 w-44 z-20 text-xs">
+                <button onClick={() => handleDownloadExcel('Evolucion_Mensual', 'evolution')} className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 cursor-pointer">
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" /> Descargar en Excel
+                </button>
+                <button onClick={() => handleShareEmail('Evolución Mensual de Gasto')} className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 cursor-pointer">
+                  <Mail className="w-3.5 h-3.5 text-blue-600" /> Compartir por Correo
                 </button>
                 <button onClick={() => handleAction('Evolución Mensual', 'compartir')} className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 cursor-pointer">
-                  <Share2 className="w-3.5 h-3.5" /> Copiar Enlace
-                </button>
-                <button onClick={() => handleAction('Evolución Mensual', 'imprimir')} className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 cursor-pointer">
-                  <Printer className="w-3.5 h-3.5" /> Imprimir
+                  <Share2 className="w-3.5 h-3.5 text-slate-600" /> Copiar Enlace
                 </button>
               </div>
             )}
@@ -125,15 +171,15 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({ utilityType, recor
               <MoreVertical className="w-4 h-4" />
             </button>
             {openMenu === 'top' && (
-              <div className="absolute right-0 top-8 bg-white border border-[#cbd5e1] rounded-lg shadow-lg py-1 w-40 z-20 text-xs">
-                <button onClick={() => handleAction('Top Consumo', 'descargar')} className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 cursor-pointer">
-                  <Download className="w-3.5 h-3.5" /> Descargar PNG
+              <div className="absolute right-0 top-8 bg-white border border-[#cbd5e1] rounded-lg shadow-lg py-1 w-44 z-20 text-xs">
+                <button onClick={() => handleDownloadExcel('Top_Consumo_Predios', 'top')} className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 cursor-pointer">
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" /> Descargar en Excel
+                </button>
+                <button onClick={() => handleShareEmail('Top de Consumo por Predio')} className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 cursor-pointer">
+                  <Mail className="w-3.5 h-3.5 text-blue-600" /> Compartir por Correo
                 </button>
                 <button onClick={() => handleAction('Top Consumo', 'compartir')} className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 cursor-pointer">
-                  <Share2 className="w-3.5 h-3.5" /> Copiar Enlace
-                </button>
-                <button onClick={() => handleAction('Top Consumo', 'imprimir')} className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 cursor-pointer">
-                  <Printer className="w-3.5 h-3.5" /> Imprimir
+                  <Share2 className="w-3.5 h-3.5 text-slate-600" /> Copiar Enlace
                 </button>
               </div>
             )}
