@@ -5,8 +5,16 @@ import { DataTableSection } from './components/DataTableSection';
 import { SupplyModal } from './components/SupplyModal';
 import { ReceiptModal } from './components/ReceiptModal';
 import { Zap, Droplet, User, ShieldCheck, CheckCircle2, AlertTriangle, Info } from 'lucide-react';
-
-const STORAGE_KEY = 'infradash_supply_records_v1';
+import {
+  STORAGE_KEY,
+  LEGACY_ENERGY_KEY,
+  LEGACY_WATER_KEY,
+  MIGRATION_FLAG_KEY,
+  MONTH_KEYS,
+  buildMonthlyDetailsForForm,
+  findExistingSupply,
+  loadRecordsFromStorage
+} from './recordUtils';
 
 const initialDefaultRecords: SupplyRecord[] = [
   {
@@ -43,26 +51,25 @@ export default function App() {
   const [utilityType, setUtilityType] = useState<UtilityType>('energy');
   const [role, setRole] = useState<UserRole>('admin');
 
-  // Inicializar registros desde localStorage o usando los datos por defecto limpios
+  // Inicializar registros desde localStorage.
+  // Incluye los datos guardados por versiones anteriores (claves antiguas),
+  // que se recuperan una sola vez y nunca se borran.
   const [records, setRecords] = useState<SupplyRecord[]>(() => {
     try {
-      const savedData = localStorage.getItem(STORAGE_KEY);
-      if (savedData) {
-        const parsed = JSON.parse(savedData);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      }
+      return loadRecordsFromStorage(localStorage, initialDefaultRecords);
     } catch (e) {
       console.error('Error al cargar localStorage:', e);
+      return initialDefaultRecords;
     }
-    return initialDefaultRecords;
   });
 
   // Guardar automáticamente en localStorage ante cualquier cambio
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+      if (localStorage.getItem(LEGACY_ENERGY_KEY) || localStorage.getItem(LEGACY_WATER_KEY)) {
+        localStorage.setItem(MIGRATION_FLAG_KEY, '1');
+      }
     } catch (e) {
       console.error('Error al guardar en localStorage:', e);
     }
@@ -84,16 +91,55 @@ export default function App() {
     setTimeout(() => setToast(null), 4000);
   };
 
+  // Guardado seguro: si llega un suministro "nuevo" que ya existe
+  // (mismo N°, mismo servicio, mismo año), se FUSIONA con el existente
+  // en vez de crear un duplicado. Nunca se pierde un mes ya cargado.
   const handleSaveRecord = (savedRecord: SupplyRecord) => {
     setRecords(prev => {
       const exists = prev.some(r => r.id === savedRecord.id);
       if (exists) {
         return prev.map(r => r.id === savedRecord.id ? savedRecord : r);
-      } else {
-        return [savedRecord, ...prev];
       }
+
+      const duplicate = findExistingSupply(prev, savedRecord.supplyNumber, savedRecord.utilityType, savedRecord.year);
+      if (duplicate) {
+        const existingDetails = buildMonthlyDetailsForForm(duplicate);
+        const incomingDetails = buildMonthlyDetailsForForm(savedRecord);
+        const mergedDetails: any = {};
+        const mergedMonths: any = {};
+        let totalAmount = 0;
+        let totalConsumption = 0;
+        MONTH_KEYS.forEach(m => {
+          const incoming = incomingDetails[m];
+          const incomingHasData = incoming.amount > 0 || incoming.consumption > 0 || incoming.receipt !== '' || incoming.currentReading > 0;
+          const chosen = incomingHasData ? incoming : existingDetails[m];
+          mergedDetails[m] = chosen;
+          mergedMonths[m] = chosen.amount;
+          totalAmount += chosen.amount;
+          totalConsumption += chosen.consumption;
+        });
+        const mergedRecord: SupplyRecord = {
+          ...duplicate,
+          propertyName: savedRecord.propertyName || duplicate.propertyName,
+          category: savedRecord.category || duplicate.category,
+          monthlyDetails: mergedDetails,
+          months: mergedMonths,
+          totalAmount: Number(totalAmount.toFixed(2)),
+          consumption: Number(totalConsumption.toFixed(2))
+        };
+        return prev.map(r => r.id === duplicate.id ? mergedRecord : r);
+      }
+
+      return [savedRecord, ...prev];
     });
-    showToast('Guardado', `Suministro ${savedRecord.supplyNumber} actualizado correctamente.`, 'success');
+  };
+
+  // Une copias duplicadas: guarda el registro unido y elimina las copias sobrantes
+  const handleMergeDuplicates = (merged: SupplyRecord, removeIds: string[]) => {
+    setRecords(prev => prev
+      .filter(r => !removeIds.includes(r.id))
+      .map(r => r.id === merged.id ? merged : r));
+    showToast('Copias unidas', `El suministro ${merged.supplyNumber} quedó en un solo registro con todos sus meses.`, 'success');
   };
 
   const handleDeleteRecord = (record: SupplyRecord) => {
@@ -194,6 +240,11 @@ export default function App() {
             setIsSupplyModalOpen(true);
           }}
           onOpenDeleteModal={handleDeleteRecord}
+          onMergeDuplicates={handleMergeDuplicates}
+          onOpenEditFromDuplicates={(rec: SupplyRecord) => {
+            setRecordToEdit(rec);
+            setIsSupplyModalOpen(true);
+          }}
           onOpenReceiptModal={(rec) => {
             setSelectedReceiptRecord(rec);
             setActiveMonthForReceipt((rec as any).selectedMonth || 'jul');
@@ -210,6 +261,8 @@ export default function App() {
         recordToEdit={recordToEdit}
         utilityType={utilityType}
         onShowToast={showToast}
+        existingRecords={records}
+        onSwitchToEdit={(rec) => setRecordToEdit(rec)}
       />
 
       {/* Modal Inteligente de Recibos por Mes */}

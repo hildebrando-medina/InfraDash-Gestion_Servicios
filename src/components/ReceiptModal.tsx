@@ -1,6 +1,16 @@
 import React from 'react';
 import { X, Printer, Download, Zap, Droplet, Building2, FileText, CheckCircle2, AlertTriangle, Calendar } from 'lucide-react';
 import { SupplyRecord, UtilityType } from '../types';
+import {
+  MONTH_FULL_NAMES,
+  isMonthKey,
+  MonthKey,
+  hasMonthlyDetails,
+  getMonthAmount,
+  getMonthConsumption,
+  getMonthReceipt,
+  getLatestMonthWithData
+} from '../recordUtils';
 
 interface ReceiptModalProps {
   record: SupplyRecord | null;
@@ -10,21 +20,6 @@ interface ReceiptModalProps {
   onShowToast?: (title: string, message: string, type?: 'success' | 'info' | 'warning' | 'error') => void;
   activeMonthView?: string;
 }
-
-const MONTH_NAMES_MAP: { [key: string]: string } = {
-  ene: 'Enero',
-  feb: 'Febrero',
-  mar: 'Marzo',
-  abr: 'Abril',
-  may: 'Mayo',
-  jun: 'Junio',
-  jul: 'Julio',
-  ago: 'Agosto',
-  set: 'Septiembre',
-  oct: 'Octubre',
-  nov: 'Noviembre',
-  dic: 'Diciembre'
-};
 
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   record,
@@ -36,36 +31,30 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
 }) => {
   if (!isOpen || !record) return null;
 
-  const isEnergy = utilityType === 'energy';
+  const recordUtility: UtilityType = (record.utilityType || utilityType) as UtilityType;
+  const isEnergy = recordUtility === 'energy';
   const unitLabel = isEnergy ? 'kWh' : 'm³';
 
-  const prevReading = (record as any).previousReading ?? 0;
-  const currReading = (record as any).currentReading ?? 0;
-  const calculatedConsumption = currReading >= prevReading ? currReading - prevReading : (record.consumption ?? 0);
-
-  let rawSelectedMonth = 'jul';
-
-  if ((record as any).selectedMonth && (record as any).selectedMonth !== 'all') {
-    rawSelectedMonth = (record as any).selectedMonth;
-  } else if (activeMonthView && activeMonthView !== 'all') {
-    rawSelectedMonth = activeMonthView;
-  } else if (record.months) {
-    const monthsKeys = ['dic', 'nov', 'oct', 'set', 'ago', 'jul', 'jun', 'may', 'abr', 'mar', 'feb', 'ene'];
-    const foundActiveKey = monthsKeys.find(m => {
-      const val = record.months?.[m as keyof typeof record.months];
-      return val !== undefined && val !== null && Number(val) > 0;
-    });
-    if (foundActiveKey) {
-      rawSelectedMonth = foundActiveKey;
-    }
+  // Mes del recibo: el elegido en la tabla; si es "Año Completo", el último mes con datos
+  let selectedMonth: MonthKey = 'jul';
+  const fromRecord = (record as any).selectedMonth;
+  if (isMonthKey(fromRecord)) {
+    selectedMonth = fromRecord;
+  } else if (isMonthKey(activeMonthView)) {
+    selectedMonth = activeMonthView;
+  } else {
+    selectedMonth = getLatestMonthWithData(record) || 'jul';
   }
 
-  const displayMonthName = MONTH_NAMES_MAP[rawSelectedMonth.toLowerCase()] || rawSelectedMonth.toUpperCase();
+  const displayMonthName = MONTH_FULL_NAMES[selectedMonth];
 
-  const monthValue = record.months?.[rawSelectedMonth.toLowerCase() as keyof typeof record.months];
-  const effectiveAmount = monthValue !== undefined && monthValue !== null && Number(monthValue) > 0 
-    ? Number(monthValue) 
-    : (record.amount || record.totalAmount || 0);
+  // Datos REALES del mes, leídos del detalle mensual (monthlyDetails)
+  const detail: any = hasMonthlyDetails(record) ? (record.monthlyDetails?.[selectedMonth] || {}) : null;
+  const prevReading = detail ? Number(detail.previousReading) || 0 : 0;
+  const currReading = detail ? Number(detail.currentReading) || 0 : 0;
+  const monthConsumption = getMonthConsumption(record, selectedMonth);
+  const effectiveAmount = getMonthAmount(record, selectedMonth);
+  const monthReceipt = getMonthReceipt(record, selectedMonth) || (!hasMonthlyDetails(record) ? record.receiptNumber : '') || 'S/N';
 
   const formatCurrency = (val: number): string => {
     return `S/ ${Number(val).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -139,7 +128,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             </div>
             <div>
               <span className="text-gray-400 block mb-0.5 uppercase tracking-wider text-[10px] font-bold">N° de Comprobante / Recibo</span>
-              <span className="font-mono font-bold text-blue-600">{record.receiptNumber || 'S/N'}</span>
+              <span className="font-mono font-bold text-blue-600">{monthReceipt}</span>
             </div>
           </div>
 
@@ -161,7 +150,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               </div>
               <div className="bg-white p-3 rounded-lg border border-blue-200 shadow-2xs bg-blue-50/50">
                 <span className="text-blue-700 block text-[10px] uppercase font-bold">Consumo del Periodo</span>
-                <span className="font-mono font-black text-blue-900 text-base">{calculatedConsumption > 0 ? calculatedConsumption.toLocaleString('es-PE') : (record.consumption || 'Registrado')}</span>
+                <span className="font-mono font-black text-blue-900 text-base">{monthConsumption !== null && monthConsumption > 0 ? monthConsumption.toLocaleString('es-PE') : '—'}</span>
                 <span className="text-[10px] text-blue-600 block font-semibold">{unitLabel}</span>
               </div>
             </div>
@@ -173,7 +162,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               <span className="font-mono font-semibold text-gray-800">Servicio de {isEnergy ? 'Energía Eléctrica' : 'Agua Potable'}</span>
             </div>
             
-            {record.debtMonths && record.debtMonths > 0 ? (
+            {Number(record.debtMonths) > 0 ? (
               <div className="flex justify-between items-center py-1 text-red-600 font-semibold bg-red-50 px-2 rounded">
                 <span className="flex items-center gap-1">
                   <AlertTriangle className="w-4 h-4" /> Deuda acumulada:
@@ -184,13 +173,13 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
 
             <div className="flex justify-between items-center py-3 border-t border-gray-200 text-sm bg-gray-50/80 px-3 rounded-xl">
               <span className="font-bold text-gray-900">Monto Total Facturado ({displayMonthName}):</span>
-              <span className="font-mono font-black text-blue-600 text-lg">{formatCurrency(effectiveAmount)}</span>
+              <span className="font-mono font-black text-blue-600 text-lg">{effectiveAmount > 0 ? formatCurrency(effectiveAmount) : '—'}</span>
             </div>
           </div>
 
           <div className="flex items-center justify-between bg-gray-50 p-3 rounded-xl border border-gray-100">
             <span className="text-gray-500 font-semibold">Estado Actual del Recibo:</span>
-            {(record.debtMonths || 0) > 0 ? (
+            {Number(record.debtMonths) > 0 ? (
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700">
                 <AlertTriangle className="w-3.5 h-3.5" /> Pendiente de Pago
               </span>

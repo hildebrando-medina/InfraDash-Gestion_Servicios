@@ -1,6 +1,21 @@
 import React, { useState } from 'react';
-import { Eye, Edit2, Trash2, Search, Filter, AlertCircle, Plus, FileSpreadsheet, Calendar } from 'lucide-react';
+import { Eye, Edit2, Trash2, Search, Filter, AlertCircle, Plus, FileSpreadsheet, Calendar, Copy, X, Merge } from 'lucide-react';
 import { SupplyRecord, UtilityType, UserRole, FilterState } from '../types';
+import {
+  MONTH_KEYS,
+  MONTH_LABELS,
+  MonthKey,
+  getMonthAmount,
+  getMonthConsumption,
+  getMonthReceipt,
+  getAnnualAmount,
+  getAnnualConsumption,
+  getLatestReceipt,
+  monthHasData,
+  findDuplicateGroups,
+  mergeDuplicateGroup,
+  formatNumber
+} from '../recordUtils';
 
 interface DataTableSectionProps {
   records: SupplyRecord[];
@@ -30,13 +45,18 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
   onOpenDeleteModal,
   onOpenReceiptModal,
   onOpenFilterModal,
-  onOpenNewModal
+  onOpenNewModal,
+  onOpenEditFromDuplicates,
+  onMergeDuplicates
 }) => {
   const [itemsPerPage, setItemsPerPage] = useState<number>(10);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [localSearch, setLocalSearch] = useState<string>('');
   const [localCategory] = useState<string>('ALL');
   const [selectedMonthView, setSelectedMonthView] = useState<ActiveMonthView>('all');
+  const [showDuplicates, setShowDuplicates] = useState<boolean>(false);
+  // Se recalcula en vivo: al unir o corregir copias, el panel se actualiza solo
+  const duplicateGroups = showDuplicates ? findDuplicateGroups(records, utilityType) : null;
 
   const unitLabel = utilityType === 'energy' ? 'kW-h' : 'm³';
 
@@ -44,10 +64,11 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
     const matchesUtility = record.utilityType === utilityType;
     const searchTerm = (filters?.search || localSearch).toLowerCase();
     
-    const matchesSearch = 
-      record.supplyNumber.toLowerCase().includes(searchTerm) ||
-      record.propertyName.toLowerCase().includes(searchTerm) ||
-      (record.receiptNumber && record.receiptNumber.toLowerCase().includes(searchTerm));
+    const receipts = [record.receiptNumber || '', ...MONTH_KEYS.map(m => getMonthReceipt(record, m))].join(' ').toLowerCase();
+    const matchesSearch =
+      (record.supplyNumber || '').toString().toLowerCase().includes(searchTerm) ||
+      (record.propertyName || record.address || '').toString().toLowerCase().includes(searchTerm) ||
+      receipts.includes(searchTerm);
     
     const matchesCategory = localCategory === 'ALL' || record.category === localCategory;
 
@@ -60,9 +81,23 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
     currentPage * itemsPerPage
   );
 
-  const formatCurrency = (val: number | undefined): string => {
-    if (val === undefined || val === null || isNaN(val)) return '-';
+  // Muestra "—" cuando no hay monto real: nunca un número inventado
+  const formatCurrency = (val: number | undefined | null): string => {
+    if (val === undefined || val === null || isNaN(Number(val)) || Number(val) === 0) return '—';
     return `S/ ${Number(val).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
+  const formatConsumption = (val: number | null): string => {
+    if (val === null || val === 0) return '—';
+    return `${formatNumber(val)} ${unitLabel}`;
+  };
+
+  const handleDetectDuplicates = () => {
+    const groups = findDuplicateGroups(records, utilityType);
+    setShowDuplicates(groups.length > 0);
+    if (groups.length === 0 && onShowToast) {
+      onShowToast('Sin duplicados', `No se encontraron suministros repetidos en ${utilityType === 'energy' ? 'Energía' : 'Agua'}.`, 'success');
+    }
   };
 
   const handleExportToExcel = () => {
@@ -75,38 +110,44 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
       return;
     }
 
-    const headers = [
-      'Nro Suministro', 'Predio / Sede', 'Categoria', 'Nro Recibo', 
-      `Consumo (${unitLabel})`, 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Set', 'Oct', 'Nov', 'Dic', 'Total Facturado'
-    ];
-    
-    const rows = filteredRecords.map(r => [
-      r.supplyNumber,
-      `"${r.propertyName || r.address || ''}"`,
-      `"${r.category || ''}"`,
-      r.receiptNumber || 'S/N',
-      r.consumption || (utilityType === 'energy' ? 320 : 45),
-      r.months?.ene || 0,
-      r.months?.feb || 0,
-      r.months?.mar || 0,
-      r.months?.abr || 0,
-      r.months?.may || 0,
-      r.months?.jun || 0,
-      r.months?.jul || 0,
-      r.months?.ago || 0,
-      r.months?.set || 0,
-      r.months?.oct || 0,
-      r.months?.nov || 0,
-      r.months?.dic || 0,
-      r.totalAmount || 0
-    ]);
+    const isMonth = selectedMonthView !== 'all';
+    const monthKey = selectedMonthView as MonthKey;
+
+    const headers = isMonth
+      ? ['Nro Suministro', 'Predio / Sede', 'Categoria', `Nro Recibo (${selectedMonthView.toUpperCase()})`, `Consumo ${selectedMonthView.toUpperCase()} (${unitLabel})`, `Monto ${selectedMonthView.toUpperCase()} (S/)`]
+      : ['Nro Suministro', 'Predio / Sede', 'Categoria', 'Ultimo Nro Recibo', `Consumo Anual (${unitLabel})`, ...MONTH_KEYS.map(m => `${MONTH_LABELS[m]} (S/)`), 'Total Facturado (S/)'];
+
+    const rows = filteredRecords.map(r => {
+      const base = [
+        r.supplyNumber,
+        `"${r.propertyName || r.address || ''}"`,
+        `"${r.category || ''}"`
+      ];
+      if (isMonth) {
+        const cons = getMonthConsumption(r, monthKey);
+        return [
+          ...base,
+          getMonthReceipt(r, monthKey) || '',
+          cons === null ? '' : cons.toFixed(2),
+          getMonthAmount(r, monthKey).toFixed(2)
+        ];
+      }
+      const annualCons = getAnnualConsumption(r);
+      return [
+        ...base,
+        getLatestReceipt(r) || '',
+        annualCons === null ? '' : annualCons.toFixed(2),
+        ...MONTH_KEYS.map(m => getMonthAmount(r, m).toFixed(2)),
+        getAnnualAmount(r).toFixed(2)
+      ];
+    });
 
     const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map(e => e.join(';'))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `Reporte_${utilityType === 'energy' ? 'Energia_Electrica' : 'Agua_Potable'}_Anual.csv`);
+    link.setAttribute('download', `Reporte_${utilityType === 'energy' ? 'Energia_Electrica' : 'Agua_Potable'}_${selectedMonthView === 'all' ? 'Anual' : selectedMonthView.toUpperCase()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -181,6 +222,15 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
             <span>Exportar Excel</span>
           </button>
 
+          <button
+            onClick={handleDetectDuplicates}
+            className="px-3 py-2 border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+            title="Buscar suministros registrados más de una vez"
+          >
+            <Copy className="w-4 h-4" />
+            <span>Detectar Duplicados</span>
+          </button>
+
           {onOpenNewModal && role === 'admin' && (
             <button
               onClick={onOpenNewModal}
@@ -192,6 +242,74 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
           )}
         </div>
       </div>
+
+      {duplicateGroups && duplicateGroups.length > 0 && (
+        <div className="mb-4 bg-amber-50 border border-amber-300 rounded-xl p-4 text-xs text-amber-900">
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div>
+              <p className="font-bold text-sm">Se encontraron {duplicateGroups.length} suministro(s) registrados más de una vez</p>
+              <p>
+                Presione "Unir copias": todos los meses quedan en un solo registro y las copias sobrantes se eliminan.
+                Si dos copias tienen datos distintos en el mismo mes, el sistema no une nada y le indica qué mes revisar.
+              </p>
+            </div>
+            <button onClick={() => setShowDuplicates(false)} className="p-1 rounded hover:bg-amber-100 cursor-pointer" title="Cerrar">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="flex flex-col gap-3">
+            {duplicateGroups.map((group, gIdx) => (
+              <div key={gIdx} className="bg-white border border-amber-200 rounded-lg p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <p className="font-bold font-mono">Suministro {group[0].supplyNumber}</p>
+                  {role === 'admin' && onMergeDuplicates && (
+                    <button
+                      onClick={() => {
+                        const result = mergeDuplicateGroup(group);
+                        if (result.conflicts.length > 0) {
+                          const meses = result.conflicts.map(m => MONTH_LABELS[m]).join(', ');
+                          if (onShowToast) {
+                            onShowToast('No se unió', `Las copias tienen datos distintos en: ${meses}. Corrija ese mes con "Editar" y vuelva a intentar.`, 'warning');
+                          }
+                          return;
+                        }
+                        if (confirm(`¿Unir las ${group.length} copias del suministro ${group[0].supplyNumber} en un solo registro? Se conservan todos los meses.`)) {
+                          onMergeDuplicates(result.merged, result.removeIds);
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-semibold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Merge className="w-3.5 h-3.5" /> Unir copias
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  {group.map((rec, rIdx) => {
+                    const monthsWithData = MONTH_KEYS.filter(m => monthHasData(rec, m)).map(m => MONTH_LABELS[m]);
+                    return (
+                      <div key={rec.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-amber-100 pt-1.5">
+                        <span>
+                          Copia {rIdx + 1}: <strong>{rec.propertyName || rec.address}</strong> — meses con datos:{' '}
+                          <strong>{monthsWithData.length > 0 ? monthsWithData.join(', ') : 'ninguno'}</strong>{' '}
+                          — total {formatCurrency(getAnnualAmount(rec))}
+                        </span>
+                        {role === 'admin' && onOpenEditFromDuplicates && (
+                          <button
+                            onClick={() => onOpenEditFromDuplicates(rec)}
+                            className="px-2 py-1 rounded bg-amber-600 hover:bg-amber-700 text-white font-semibold flex items-center gap-1 cursor-pointer"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" /> Editar copia {rIdx + 1}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center gap-1.5 mb-4 pb-3 border-b border-gray-100 overflow-x-auto">
         <span className="text-xs font-semibold text-gray-600 flex items-center gap-1 mr-2 shrink-0">
@@ -225,7 +343,7 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
                 <>
                   <th className="p-3 text-center border-r border-gray-200">CONSUMO ANUAL ({unitLabel})</th>
                   <th colSpan={12} className="p-3 text-center border-r border-gray-200 bg-blue-50/50 text-blue-900 font-bold">
-                    DETALLE DE CONSUMOS ANUAL EN SOLES (ENE - DIC)
+                    DETALLE DE MONTOS FACTURADOS EN SOLES (ENE - DIC)
                   </th>
                   <th className="p-3 text-right border-r border-gray-200">TOTAL ANUAL (S/)</th>
                 </>
@@ -273,8 +391,15 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
               </tr>
             ) : (
               paginatedRecords.map((record: SupplyRecord) => {
-                const baseCons = record.consumption || (utilityType === 'energy' ? 320 : 45);
-                const displayConsumption = `${baseCons} ${unitLabel}`;
+                const isMonthView = selectedMonthView !== 'all';
+                const viewMonth = selectedMonthView as MonthKey;
+                // Consumo REAL leído del detalle mensual; "—" si no existe
+                const displayConsumption = isMonthView
+                  ? formatConsumption(getMonthConsumption(record, viewMonth))
+                  : formatConsumption(getAnnualConsumption(record));
+                const displayReceipt = isMonthView
+                  ? (getMonthReceipt(record, viewMonth) || 'S/N')
+                  : (getLatestReceipt(record) || 'S/N');
 
                 return (
                   <tr key={record.id} className="hover:bg-blue-50/30 transition-colors">
@@ -290,7 +415,7 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
                       </span>
                     </td>
                     <td className="p-3 text-center font-mono text-gray-600 border-r border-gray-100">
-                      {record.receiptNumber || 'S/N'}
+                      {displayReceipt}
                     </td>
 
                     {selectedMonthView === 'all' ? (
@@ -298,8 +423,8 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
                         <td className="p-3 text-center font-bold text-blue-600 border-r border-gray-100">
                           {displayConsumption}
                         </td>
-                        {(['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'set', 'oct', 'nov', 'dic'] as const).map((mKey, i) => {
-                          const monthlyVal = record.months?.[mKey];
+                        {MONTH_KEYS.map((mKey, i) => {
+                          const monthlyVal = getMonthAmount(record, mKey);
                           return (
                             <td key={mKey} className={`p-2 text-right font-mono text-[11px] text-gray-600 border-r ${i === 11 ? 'border-gray-200' : 'border-gray-100'}`}>
                               {formatCurrency(monthlyVal)}
@@ -307,11 +432,7 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
                           );
                         })}
                         <td className="p-3 text-right font-bold text-gray-900 border-r border-gray-100">
-                          {formatCurrency(
-                            record.months 
-                              ? Object.values(record.months).reduce((acc: number, val: any) => acc + (Number(val) || 0), 0) 
-                              : record.totalAmount
-                          )}
+                          {formatCurrency(getAnnualAmount(record))}
                         </td>
                       </>
                     ) : (
@@ -320,7 +441,7 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
                           {displayConsumption}
                         </td>
                         <td className="p-3 text-right font-mono font-bold text-blue-700 border-r border-gray-200 bg-blue-50/25">
-                          {formatCurrency(record.months?.[selectedMonthView as keyof typeof record.months])}
+                          {formatCurrency(getMonthAmount(record, viewMonth))}
                         </td>
                       </>
                     )}
