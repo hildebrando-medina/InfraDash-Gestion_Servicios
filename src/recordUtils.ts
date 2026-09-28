@@ -230,6 +230,8 @@ export const isUntouchedSample = (record: SupplyRecord, samples: SupplyRecord[])
 // Las claves antiguas NUNCA se borran: quedan como respaldo.
 export const loadRecordsFromStorage = (storage: Storage, samples: SupplyRecord[]): SupplyRecord[] => {
   const current = readArray(storage, STORAGE_KEY) as SupplyRecord[];
+  // ¿El sistema ya se usó antes en este navegador? (aunque hoy esté vacío)
+  const alreadyInitialized = storage.getItem(STORAGE_KEY) !== null;
   const alreadyMigrated = storage.getItem(MIGRATION_FLAG_KEY) === '1';
 
   let legacy: SupplyRecord[] = [];
@@ -240,7 +242,10 @@ export const loadRecordsFromStorage = (storage: Storage, samples: SupplyRecord[]
   }
 
   if (legacy.length === 0) {
-    return current.length > 0 ? current : samples;
+    // Si el usuario borró todo a propósito, se respeta la tabla vacía:
+    // los datos de ejemplo solo aparecen la primera vez que se abre el sistema.
+    if (current.length > 0 || alreadyInitialized) return current;
+    return samples;
   }
 
   // Si la clave actual solo tiene los datos de ejemplo sin tocar, se descartan
@@ -257,7 +262,7 @@ export const loadRecordsFromStorage = (storage: Storage, samples: SupplyRecord[]
     merged.push({ ...r, id: safeId });
   });
 
-  return merged.length > 0 ? merged : samples;
+  return merged;
 };
 
 // ============================================================
