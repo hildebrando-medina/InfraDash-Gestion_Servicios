@@ -1,5 +1,7 @@
 import React from 'react';
-import { X, Printer, Download, Zap, Droplet, Building2, FileText, CheckCircle2, AlertTriangle, Calendar } from 'lucide-react';
+import { X, Printer, Download, Zap, Droplet, Building2, FileText, CheckCircle2, AlertTriangle, Calendar, BarChart3, TrendingUp } from 'lucide-react';
+import { ColumnChart, LineChart } from './ConsumptionCharts';
+import { buildReceiptPdf, receiptPdfFileName } from '../receiptPdf';
 import { SupplyRecord, UtilityType } from '../types';
 import {
   MONTH_FULL_NAMES,
@@ -9,7 +11,10 @@ import {
   getMonthAmount,
   getMonthConsumption,
   getMonthReceipt,
-  getLatestMonthWithData
+  getLatestMonthWithData,
+  MONTH_KEYS,
+  MONTH_LABELS,
+  formatNumber
 } from '../recordUtils';
 
 interface ReceiptModalProps {
@@ -67,17 +72,49 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
     }
   };
 
-  const handleDownloadPDF = () => {
-    if (onShowToast) {
-      onShowToast('Descarga', `Recibo del suministro ${record.supplyNumber} (${displayMonthName}) preparado con éxito.`, 'success');
-    } else {
-      alert(`Descargando recibo del suministro: ${record.supplyNumber}`);
+  // Consumo de ESTE predio en los 12 meses (para los gráficos)
+  const monthLabels = MONTH_KEYS.map(m => MONTH_LABELS[m]);
+  const monthlyConsumption = MONTH_KEYS.map(m => getMonthConsumption(record, m) || 0);
+  const selectedIndex = MONTH_KEYS.indexOf(selectedMonth);
+  const annualConsumption = monthlyConsumption.reduce((a, b) => a + b, 0);
+  const monthsWithReadings = monthlyConsumption.filter(v => v > 0).length;
+  const chartColor = isEnergy ? '#1d4ed8' : '#0e7490';
+  const recordYear = Number(record.year) || 2026;
+
+  // Descarga REAL del recibo en PDF (con los dos gráficos)
+  const handleDownloadPDF = async () => {
+    try {
+      const { jsPDF } = await import('jspdf');
+      const pdfData = {
+        isEnergy,
+        supplyNumber: record.supplyNumber || '',
+        propertyName: record.propertyName || record.address || '',
+        category: record.category || '',
+        receiptNumber: monthReceipt,
+        monthName: displayMonthName,
+        year: recordYear,
+        unitLabel,
+        prevReading: detail ? prevReading : null,
+        currReading: detail ? currReading : null,
+        consumption: monthConsumption,
+        amount: effectiveAmount,
+        debtMonths: Number(record.debtMonths) || 0,
+        monthLabels,
+        monthlyConsumption,
+        selectedIndex
+      };
+      const doc = buildReceiptPdf(jsPDF, pdfData);
+      doc.save(receiptPdfFileName(pdfData));
+      onShowToast?.('PDF descargado', `Recibo del suministro ${record.supplyNumber} (${displayMonthName}) guardado en Descargas.`, 'success');
+    } catch (e) {
+      console.error('Error al generar el PDF:', e);
+      onShowToast?.('No se pudo generar el PDF', 'Use el botón "Imprimir" y elija "Guardar como PDF".', 'error');
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div className="receipt-overlay fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
+      <div id="receipt-print" className="bg-white rounded-2xl shadow-2xl border border-gray-100 w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 my-auto">
         
         <div className={`p-5 flex items-center justify-between text-white ${isEnergy ? 'bg-gradient-to-r from-blue-700 to-blue-900' : 'bg-gradient-to-r from-cyan-600 to-teal-700'}`}>
           <div className="flex items-center gap-3">
@@ -106,7 +143,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           </button>
         </div>
 
-        <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto text-gray-700 text-xs">
+        <div className="receipt-body p-6 space-y-5 max-h-[75vh] overflow-y-auto text-gray-700 text-xs">
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-xl border border-gray-100">
             <div>
@@ -190,9 +227,45 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             )}
           </div>
 
+          {/* Gráficos de consumo de ESTE predio (Ene - Dic) */}
+          <div className="border border-gray-100 rounded-xl p-4 space-y-4 receipt-charts">
+            <div>
+              <h4 className={`font-bold text-[11px] uppercase flex items-center gap-1.5 mb-2 ${isEnergy ? 'text-blue-700' : 'text-cyan-700'}`}>
+                <BarChart3 className="w-4 h-4" /> Consumo mensual del predio <span className="normal-case">({unitLabel})</span> – columnas
+              </h4>
+              <ColumnChart
+                labels={monthLabels}
+                values={monthlyConsumption}
+                color={chartColor}
+                unit={unitLabel}
+                highlightIndex={selectedIndex}
+                height={190}
+                emptyMessage="Sin lecturas registradas para este predio. El consumo se calcula con la lectura anterior y la actual de cada recibo."
+              />
+            </div>
+            <div>
+              <h4 className={`font-bold text-[11px] uppercase flex items-center gap-1.5 mb-2 ${isEnergy ? 'text-blue-700' : 'text-cyan-700'}`}>
+                <TrendingUp className="w-4 h-4" /> Evolución del consumo del predio <span className="normal-case">({unitLabel})</span> – líneas
+              </h4>
+              <LineChart
+                labels={monthLabels}
+                values={monthlyConsumption}
+                color={chartColor}
+                unit={unitLabel}
+                highlightIndex={selectedIndex}
+                height={190}
+                emptyMessage="Sin lecturas registradas para este predio."
+              />
+            </div>
+            <div className="flex flex-wrap justify-between gap-2 text-[11px] text-gray-600 border-t border-gray-100 pt-2">
+              <span>Consumo anual registrado: <strong>{formatNumber(annualConsumption)} {unitLabel}</strong></span>
+              <span>Promedio por mes con lecturas: <strong>{monthsWithReadings > 0 ? formatNumber(annualConsumption / monthsWithReadings) : 0} {unitLabel}</strong></span>
+            </div>
+          </div>
+
         </div>
 
-        <div className="p-4 bg-gray-50 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-3">
+        <div className="receipt-actions p-4 bg-gray-50 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-3">
           <button
             onClick={onClose}
             className="w-full sm:w-auto px-4 py-2 border border-gray-200 hover:bg-gray-100 text-gray-700 rounded-xl font-semibold transition-colors cursor-pointer"

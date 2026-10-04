@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SupplyRecord, UtilityType } from '../types';
-import { FileSpreadsheet, MoreVertical, Mail, TrendingUp, Building2, Share2, CalendarRange, Wallet } from 'lucide-react';
+import { FileSpreadsheet, MoreVertical, Mail, TrendingUp, Building2, Share2, CalendarRange, Wallet, ChevronLeft, ChevronRight, Activity } from 'lucide-react';
+import { LineChart } from './ConsumptionCharts';
 import {
   MONTH_KEYS,
   MONTH_LABELS,
@@ -32,6 +33,8 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({ utilityType, recor
   const [openMenu, setOpenMenu] = useState<'evolution' | 'top' | null>(null);
   const [periodType, setPeriodType] = useState<PeriodType>('annual');
   const [periodIndex, setPeriodIndex] = useState<number>(0);
+  // 0 = Gasto en soles (barras), 1 = Consumo kW-h / m³ (líneas)
+  const [chartView, setChartView] = useState<0 | 1>(0);
 
   const unitLabel = utilityType === 'energy' ? 'kW-h' : 'm³';
   const barColor = utilityType === 'energy' ? 'bg-[#004ac6] hover:bg-blue-700' : 'bg-[#00687a] hover:bg-teal-700';
@@ -51,6 +54,8 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({ utilityType, recor
   const periodConsumption = periodIdx.reduce((sum, i) => sum + monthlyConsumption[i], 0);
   const periodMonthsWithData = periodIdx.filter(i => monthlyTotals[i] > 0).length;
   const periodAverage = periodMonthsWithData > 0 ? periodTotal / periodMonthsWithData : 0;
+  const periodConsMonths = periodIdx.filter(i => monthlyConsumption[i] > 0).length;
+  const periodConsumptionAverage = periodConsMonths > 0 ? periodConsumption / periodConsMonths : 0;
   const periodSupplies = records.filter(r => periodMonths.some(m => getMonthAmount(r, m) > 0)).length;
 
   // En "Mensual" se ven los 12 meses con el mes elegido resaltado; en los demás, solo los meses del período
@@ -102,7 +107,7 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({ utilityType, recor
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `Reporte_${chartTitle.replace(/\s+/g, '_')}_${periodLabel.replace(/[^A-Za-z0-9]+/g, '_')}_${utilityType}.csv`);
+    link.setAttribute('download', `Reporte_${chartTitle.replace(/\s+/g, '_')}_${periodLabel.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '_')}_${utilityType}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -117,7 +122,12 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({ utilityType, recor
     const subject = encodeURIComponent(`Reporte Técnico: ${chartTitle} - ${utilityName} - ${periodLabel}`);
 
     let bodyText = `Estimado equipo técnico,\n\nSe comparte el resumen consolidado de ${utilityName} (${chartTitle}) - Período: ${periodLabel}:\n`;
-    if (chartTitle.includes('Gasto')) {
+    if (chartTitle.includes('Consumo')) {
+      bodyText += `- Consumo del período: ${formatNumber(periodConsumption)} ${unitLabel}\n- Gasto del período: ${formatSoles(periodTotal)}\n`;
+      periodIdx.forEach(i => {
+        bodyText += `  ${MONTH_LABELS[MONTH_KEYS[i]]}: ${formatNumber(monthlyConsumption[i])} ${unitLabel}\n`;
+      });
+    } else if (chartTitle.includes('Gasto')) {
       bodyText += `- Gasto del período: ${formatSoles(periodTotal)}\n- Promedio por mes con datos: ${formatSoles(periodAverage)}\n- Consumo del período: ${formatNumber(periodConsumption)} ${unitLabel}\n`;
       periodIdx.forEach(i => {
         bodyText += `  ${MONTH_LABELS[MONTH_KEYS[i]]}: ${formatSoles(monthlyTotals[i])}\n`;
@@ -209,14 +219,36 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({ utilityType, recor
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="font-bold text-[#191c1e] text-base flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-[#004ac6]" />
-                Evolución Mensual de Gasto (S/)
+                {chartView === 0
+                  ? <TrendingUp className="w-4 h-4 text-[#004ac6]" />
+                  : <Activity className={`w-4 h-4 ${accentText}`} />}
+                {chartView === 0 ? 'Evolución Mensual de Gasto (S/)' : `Evolución Mensual de Consumo (${unitLabel})`}
               </h3>
               <p className="text-xs text-[#434655]">
-                Monto facturado real — {periodType === 'monthly' ? `12 meses, resaltado: ${periodLabel}` : periodLabel}
+                {chartView === 0 ? 'Monto facturado real' : 'Consumo de todos los predios según lecturas'} — {periodType === 'monthly' ? `12 meses, resaltado: ${periodLabel}` : periodLabel}
               </p>
             </div>
             <div className="flex items-center gap-1 relative">
+              {/* Flechas para cambiar de gráfico */}
+              <div className="flex items-center gap-1 mr-1">
+                <button
+                  onClick={() => setChartView(chartView === 0 ? 1 : 0)}
+                  title="Gráfico anterior"
+                  aria-label="Gráfico anterior"
+                  className="p-1.5 rounded-lg border border-[#cbd5e1] text-[#434655] hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="text-[11px] font-semibold text-[#434655] w-8 text-center">{chartView + 1} / 2</span>
+                <button
+                  onClick={() => setChartView(chartView === 0 ? 1 : 0)}
+                  title="Gráfico siguiente"
+                  aria-label="Gráfico siguiente"
+                  className="p-1.5 rounded-lg border border-[#cbd5e1] text-[#434655] hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
               <button
                 onClick={() => setOpenMenu(openMenu === 'evolution' ? null : 'evolution')}
                 className="p-1.5 text-[#434655] hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
@@ -225,13 +257,13 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({ utilityType, recor
               </button>
               {openMenu === 'evolution' && (
                 <div className="absolute right-0 top-8 bg-white border border-[#cbd5e1] rounded-lg shadow-lg py-1 w-44 z-20 text-xs">
-                  <button onClick={() => handleDownloadExcel('Evolucion_Gasto', 'evolution')} className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 cursor-pointer">
+                  <button onClick={() => handleDownloadExcel(chartView === 0 ? 'Evolucion_Gasto' : 'Evolucion_Consumo', 'evolution')} className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 cursor-pointer">
                     <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" /> Descargar en Excel
                   </button>
-                  <button onClick={() => handleShareEmail('Evolución de Gasto')} className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 cursor-pointer">
+                  <button onClick={() => handleShareEmail(chartView === 0 ? 'Evolución de Gasto' : 'Evolución de Consumo')} className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 cursor-pointer">
                     <Mail className="w-3.5 h-3.5 text-blue-600" /> Compartir por Correo
                   </button>
-                  <button onClick={() => handleCopyLink('Evolución de Gasto')} className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 cursor-pointer">
+                  <button onClick={() => handleCopyLink(chartView === 0 ? 'Evolución de Gasto' : 'Evolución de Consumo')} className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 cursor-pointer">
                     <Share2 className="w-3.5 h-3.5 text-slate-600" /> Copiar Enlace
                   </button>
                 </div>
@@ -239,31 +271,54 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({ utilityType, recor
             </div>
           </div>
 
+          {chartView === 0 ? (
           <div className="h-44 flex items-end justify-between gap-1 pt-6 px-2 border-b border-slate-100 pb-2">
-            {barsIdx.map(i => {
-              const val = monthlyTotals[i];
-              const heightPercent = Math.round((val / maxVal) * 100);
-              const highlighted = periodType !== 'monthly' || i === periodIdx[0];
-              return (
-                <div key={i} className="flex-1 flex flex-col items-center h-full justify-end group relative">
-                  <div className="opacity-0 group-hover:opacity-100 absolute -top-8 bg-slate-800 text-white text-[10px] py-0.5 px-1.5 rounded transition-opacity whitespace-nowrap z-10 shadow">
-                    {formatSoles(val)}
+              {barsIdx.map(i => {
+                const val = monthlyTotals[i];
+                const heightPercent = Math.round((val / maxVal) * 100);
+                const highlighted = periodType !== 'monthly' || i === periodIdx[0];
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center h-full justify-end group relative">
+                    <div className="opacity-0 group-hover:opacity-100 absolute -top-8 bg-slate-800 text-white text-[10px] py-0.5 px-1.5 rounded transition-opacity whitespace-nowrap z-10 shadow">
+                      {formatSoles(val)}
+                    </div>
+                    <div
+                      style={{ height: val > 0 ? `${Math.max(heightPercent, 4)}%` : '2px' }}
+                      className={`w-full max-w-[28px] rounded-t transition-all ${val > 0 ? barColor : 'bg-slate-200'} ${highlighted ? '' : 'opacity-30'}`}
+                    />
+                    <span className={`text-[10px] mt-2 ${highlighted ? 'font-bold text-[#191c1e]' : 'font-semibold text-[#434655]'}`}>
+                      {MONTH_LABELS[MONTH_KEYS[i]]}
+                    </span>
                   </div>
-                  <div
-                    style={{ height: val > 0 ? `${Math.max(heightPercent, 4)}%` : '2px' }}
-                    className={`w-full max-w-[28px] rounded-t transition-all ${val > 0 ? barColor : 'bg-slate-200'} ${highlighted ? '' : 'opacity-30'}`}
-                  />
-                  <span className={`text-[10px] mt-2 ${highlighted ? 'font-bold text-[#191c1e]' : 'font-semibold text-[#434655]'}`}>
-                    {MONTH_LABELS[MONTH_KEYS[i]]}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="border-b border-slate-100 pb-2">
+              <LineChart
+                labels={barsIdx.map(i => MONTH_LABELS[MONTH_KEYS[i]])}
+                values={barsIdx.map(i => monthlyConsumption[i])}
+                color={utilityType === 'energy' ? '#004ac6' : '#00687a'}
+                unit={unitLabel}
+                highlightIndex={periodType === 'monthly' ? barsIdx.indexOf(periodIdx[0]) : null}
+                height={190}
+                emptyMessage={`Sin lecturas registradas en este período. El consumo (${unitLabel}) se calcula con la lectura anterior y la actual de cada recibo.`}
+              />
+            </div>
+          )}
 
           <div className="flex justify-between items-center pt-3 text-xs text-[#434655]">
-            <span>Promedio mensual del período: <strong>{formatSoles(periodAverage)}</strong></span>
-            <span>Gasto del período: <strong>{formatSoles(periodTotal)}</strong></span>
+            {chartView === 0 ? (
+              <>
+                <span>Promedio mensual del período: <strong>{formatSoles(periodAverage)}</strong></span>
+                <span>Gasto del período: <strong>{formatSoles(periodTotal)}</strong></span>
+              </>
+            ) : (
+              <>
+                <span>Promedio mensual de consumo: <strong>{formatNumber(periodConsumptionAverage)} {unitLabel}</strong></span>
+                <span>Consumo del período: <strong>{formatNumber(periodConsumption)} {unitLabel}</strong></span>
+              </>
+            )}
           </div>
         </div>
 
