@@ -46,15 +46,27 @@ export function SupplyModal({
 }: SupplyModalProps) {
   const [activeTabMonth, setActiveTabMonth] = useState<MonthKey>('ene');
   const [formData, setFormData] = useState<any>(buildEmptyForm(utilityType));
+  // Meses cuyo consumo fue escrito a mano: las lecturas ya no lo recalculan ni lo borran
+  const [manualConsumption, setManualConsumption] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (recordToEdit) {
       // Se cargan TODOS los meses ya guardados (también los del formato antiguo),
       // así editar nunca borra meses anteriores.
+      const details = buildMonthlyDetailsForForm(recordToEdit);
       setFormData({
         ...recordToEdit,
-        monthlyDetails: buildMonthlyDetailsForForm(recordToEdit)
+        monthlyDetails: details
       });
+      // Si un consumo guardado no coincide con (lectura actual - lectura anterior),
+      // fue escrito a mano: se protege para que no se recalcule al tocar las lecturas.
+      const manual: Record<string, boolean> = {};
+      MONTH_KEYS.forEach(m => {
+        const d = details[m];
+        const calc = Math.max(0, Number(((Number(d.currentReading) || 0) - (Number(d.previousReading) || 0)).toFixed(2)));
+        if ((Number(d.consumption) || 0) > 0 && Number(d.consumption) !== calc) manual[m] = true;
+      });
+      setManualConsumption(manual);
       // Se abre directamente en el último mes con datos para seguir cargando desde ahí
       let lastWithData: MonthKey = 'ene';
       MONTH_KEYS.forEach(m => {
@@ -63,6 +75,7 @@ export function SupplyModal({
       setActiveTabMonth(lastWithData);
     } else {
       setFormData(buildEmptyForm(utilityType));
+      setManualConsumption({});
       setActiveTabMonth('ene');
     }
   }, [recordToEdit, utilityType, isOpen]);
@@ -95,8 +108,14 @@ export function SupplyModal({
     
     let updatedMonth = { ...currentMonthData, [field]: value };
 
-    // Si cambian las lecturas, calculamos automáticamente el consumo físico de manera segura
-    if (field === 'previousReading' || field === 'currentReading') {
+    // El consumo escrito a mano queda protegido para este mes
+    if (field === 'consumption') {
+      setManualConsumption(prev => ({ ...prev, [activeTabMonth]: true }));
+    }
+
+    // Si cambian las lecturas, el consumo se calcula solo,
+    // EXCEPTO cuando fue escrito a mano (nunca se borra)
+    if ((field === 'previousReading' || field === 'currentReading') && !manualConsumption[activeTabMonth]) {
       const prev = field === 'previousReading' ? parseFloat(value) || 0 : parseFloat(currentMonthData.previousReading) || 0;
       const curr = field === 'currentReading' ? parseFloat(value) || 0 : parseFloat(currentMonthData.currentReading) || 0;
       updatedMonth.consumption = Math.max(0, Number((curr - prev).toFixed(2)));
@@ -323,6 +342,34 @@ export function SupplyModal({
                 onChange={e => handleMonthDetailChange('consumption', e.target.value)}
                 className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 font-bold text-blue-700"
               />
+              {manualConsumption[activeTabMonth] ? (
+                <p className="text-[10px] text-amber-700 mt-1 leading-tight">
+                  Escrito a mano (protegido).{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const prevR = parseFloat(currentMonthInfo.previousReading) || 0;
+                      const currR = parseFloat(currentMonthInfo.currentReading) || 0;
+                      setManualConsumption(prev => ({ ...prev, [activeTabMonth]: false }));
+                      setFormData((prev: any) => ({
+                        ...prev,
+                        monthlyDetails: {
+                          ...prev.monthlyDetails,
+                          [activeTabMonth]: {
+                            ...(prev.monthlyDetails?.[activeTabMonth] || emptyMonthDetail()),
+                            consumption: Math.max(0, Number((currR - prevR).toFixed(2)))
+                          }
+                        }
+                      }));
+                    }}
+                    className="underline font-semibold cursor-pointer"
+                  >
+                    Calcular con lecturas
+                  </button>
+                </p>
+              ) : (
+                <p className="text-[10px] text-slate-500 mt-1 leading-tight">Se calcula con las lecturas, o escríbalo a mano.</p>
+              )}
             </div>
             <div>
               <label className="block font-semibold text-slate-700 mb-1">Monto Facturado (S/)</label>

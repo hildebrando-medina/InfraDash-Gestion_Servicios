@@ -78,6 +78,14 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   const selectedIndex = MONTH_KEYS.indexOf(selectedMonth);
   const annualConsumption = monthlyConsumption.reduce((a, b) => a + b, 0);
   const monthsWithReadings = monthlyConsumption.filter(v => v > 0).length;
+  // Monto en soles por mes y meses con recibo registrado (aunque el consumo sea 0)
+  const monthlyAmounts = MONTH_KEYS.map(m => getMonthAmount(record, m));
+  const monthsPresent = MONTH_KEYS.map((m, i) => monthlyAmounts[i] > 0 || monthlyConsumption[i] > 0 || getMonthReceipt(record, m) !== '');
+  const annualAmount = monthlyAmounts.reduce((a, b) => a + b, 0);
+  // Meses con monto facturado pero sin consumo registrado (para revisar con el recibo físico)
+  // Predio sin consumo en ningún mes (solo montos): el aviso "Revisar" se muestra en una sola línea
+  const noConsumptionAtAll = annualConsumption <= 0 && annualAmount > 0;
+  const monthsMissingConsumption = MONTH_KEYS.filter((m, i) => monthlyAmounts[i] > 0 && monthlyConsumption[i] <= 0).map(m => MONTH_LABELS[m]);
   const chartColor = isEnergy ? '#1d4ed8' : '#0e7490';
   const recordYear = Number(record.year) || 2026;
 
@@ -101,6 +109,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
         debtMonths: Number(record.debtMonths) || 0,
         monthLabels,
         monthlyConsumption,
+        monthlyAmounts,
+        monthsPresent,
         selectedIndex
       };
       const doc = buildReceiptPdf(jsPDF, pdfData);
@@ -231,36 +241,51 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           <div className="border border-gray-100 rounded-xl p-4 space-y-4 receipt-charts">
             <div>
               <h4 className={`font-bold text-[11px] uppercase flex items-center gap-1.5 mb-2 ${isEnergy ? 'text-blue-700' : 'text-cyan-700'}`}>
-                <BarChart3 className="w-4 h-4" /> Consumo mensual del predio <span className="normal-case">({unitLabel})</span> – columnas
+                <BarChart3 className="w-4 h-4" />
+                <>Consumo mensual del predio <span className="normal-case">({unitLabel}) y monto facturado (S/)</span> – columnas</>
               </h4>
               <ColumnChart
                 labels={monthLabels}
                 values={monthlyConsumption}
+                amounts={monthlyAmounts}
                 color={chartColor}
                 unit={unitLabel}
                 highlightIndex={selectedIndex}
-                height={190}
-                emptyMessage="Sin lecturas registradas para este predio. El consumo se calcula con la lectura anterior y la actual de cada recibo."
+                height={210}
+                emptyMessage="Sin recibos registrados para este predio."
               />
             </div>
             <div>
               <h4 className={`font-bold text-[11px] uppercase flex items-center gap-1.5 mb-2 ${isEnergy ? 'text-blue-700' : 'text-cyan-700'}`}>
-                <TrendingUp className="w-4 h-4" /> Evolución del consumo del predio <span className="normal-case">({unitLabel})</span> – líneas
+                <TrendingUp className="w-4 h-4" />
+                <>Evolución del consumo <span className="normal-case">({unitLabel}) y monto facturado (S/)</span> – líneas</>
               </h4>
               <LineChart
                 labels={monthLabels}
                 values={monthlyConsumption}
+                amounts={monthlyAmounts}
+                present={monthsPresent}
                 color={chartColor}
                 unit={unitLabel}
                 highlightIndex={selectedIndex}
                 height={190}
-                emptyMessage="Sin lecturas registradas para este predio."
+                emptyMessage="Sin recibos registrados para este predio."
               />
             </div>
             <div className="flex flex-wrap justify-between gap-2 text-[11px] text-gray-600 border-t border-gray-100 pt-2">
               <span>Consumo anual registrado: <strong>{formatNumber(annualConsumption)} {unitLabel}</strong></span>
-              <span>Promedio por mes con lecturas: <strong>{monthsWithReadings > 0 ? formatNumber(annualConsumption / monthsWithReadings) : 0} {unitLabel}</strong></span>
+              <span>Promedio por mes con consumo: <strong>{monthsWithReadings > 0 ? formatNumber(annualConsumption / monthsWithReadings) : 0} {unitLabel}</strong></span>
+              <span>Gasto anual registrado: <strong className="text-emerald-700">S/ {annualAmount.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
             </div>
+            {noConsumptionAtAll ? (
+              <div className="text-[11px] bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2">
+                <strong>Revisar:</strong> ningún mes tiene consumo registrado. Si los recibos indican consumo, regístrelo con el lápiz (escriba el consumo al final, sin tocar las lecturas).
+              </div>
+            ) : monthsMissingConsumption.length > 0 && (
+              <div className="text-[11px] bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2">
+                <strong>Revisar:</strong> {monthsMissingConsumption.join(', ')} tiene(n) monto en soles pero consumo 0. Si el recibo indica consumo, corríjalo con el lápiz (escriba el consumo al final, sin tocar las lecturas).
+              </div>
+            )}
           </div>
 
         </div>

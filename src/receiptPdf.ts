@@ -21,6 +21,8 @@ export interface ReceiptPdfData {
   debtMonths: number;
   monthLabels: string[];      // Ene..Dic
   monthlyConsumption: number[];
+  monthlyAmounts?: number[];  // monto S/ por mes
+  monthsPresent?: boolean[];  // meses con recibo registrado (aunque el consumo sea 0)
   selectedIndex: number;      // mes del recibo (0-11)
 }
 
@@ -129,47 +131,75 @@ export function buildReceiptPdf(JsPDF: typeof JsPDFType, d: ReceiptPdfData): JsP
 
   // ---------- Gráficos ----------
   const values = d.monthlyConsumption.map(v => Number(v) || 0);
-  const hasData = values.some(v => v > 0);
+  const amounts = (d.monthlyAmounts || []).map(v => Number(v) || 0);
+  const present = values.map((v, i) => v > 0 || (amounts[i] || 0) > 0 || !!d.monthsPresent?.[i]);
+  const hasAny = present.some(Boolean);
   const total = values.reduce((a, b) => a + b, 0);
   const withData = values.filter(v => v > 0).length;
+  const totalSoles = amounts.reduce((a, b) => a + b, 0);
+  const soles: RGB = hex('#047857');
+  const shortSoles = (v: number): string =>
+    v >= 10000 ? Math.round(v).toLocaleString('en-US') : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // Los gráficos siempre muestran el CONSUMO; el monto S/ va escrito sobre cada mes
+  const vals = values;
+  const plotUnit = unit;
+  const plotColor: RGB = main;
+  const fmtVal = shortNum;
 
   const chartFrame = (title: string, top: number, h: number) => {
     setDraw(line); doc.setFillColor(255, 255, 255); doc.roundedRect(M, top, CW, h, 2, 2, 'FD');
     doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); setText(main); doc.text(title, M + 5, top + 7);
   };
   const plot = (top: number, h: number, kind: 'bar' | 'line') => {
-    const L = M + 18, R = PW - M - 6, T = top + 16, B = top + h - 9;
-    const max = niceMax(Math.max(...values));
+    const withSoles = totalSoles > 0;
+    const L = M + 18, R = PW - M - 6, T = top + (withSoles ? 20 : 16), B = top + h - 9;
+    const max = niceMax(Math.max(...vals, 0));
     const slot = (R - L) / 12;
     doc.setFont('helvetica', 'normal'); doc.setFontSize(7); setText(gray);
-    doc.text(unit, M + 4, T - 3);
+    doc.text(plotUnit, M + 4, T - 3);
     for (let i = 0; i <= 4; i++) {
       const v = (max / 4) * i; const yy = B - (v / max) * (B - T);
       setDraw(line); doc.setLineWidth(0.2); doc.line(L, yy, R, yy);
       setText(gray); doc.text(shortNum(v), L - 2, yy + 1, { align: 'right' });
     }
-    const pts = values.map((v, i) => ({ x: L + slot * i + slot / 2, y: B - (v / max) * (B - T), v }));
+    const pts = vals.map((v, i) => ({ x: L + slot * i + slot / 2, y: B - (v / max) * (B - T), v }));
+    if (withSoles) {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); setText(soles);
+      doc.text('S/ = monto facturado del mes', PW - M - 5, top + 7, { align: 'right' });
+    }
     if (kind === 'bar') {
       const bwid = Math.min(8, slot * 0.6);
       pts.forEach((p, i) => {
-        if (p.v <= 0) return;
         const isHi = i === d.selectedIndex;
-        const col: RGB = isHi ? main : [Math.round(main[0] + (255 - main[0]) * 0.55), Math.round(main[1] + (255 - main[1]) * 0.55), Math.round(main[2] + (255 - main[2]) * 0.55)];
-        setFill(col); doc.rect(p.x - bwid / 2, p.y, bwid, Math.max(B - p.y, 0.6), 'F');
-        doc.setFont('helvetica', isHi ? 'bold' : 'normal'); doc.setFontSize(6.5); setText(isHi ? dark : gray);
-        doc.text(shortNum(p.v), p.x, p.y - 1.2, { align: 'center' });
+        if (p.v > 0) {
+          const col: RGB = isHi ? plotColor : [Math.round(plotColor[0] + (255 - plotColor[0]) * 0.55), Math.round(plotColor[1] + (255 - plotColor[1]) * 0.55), Math.round(plotColor[2] + (255 - plotColor[2]) * 0.55)];
+          setFill(col); doc.rect(p.x - bwid / 2, p.y, bwid, Math.max(B - p.y, 0.6), 'F');
+          doc.setFont('helvetica', isHi ? 'bold' : 'normal'); doc.setFontSize(6.5); setText(isHi ? dark : gray);
+          doc.text(fmtVal(p.v), p.x, p.y - 1.2, { align: 'center' });
+        }
+        const amt = amounts[i] || 0;
+        if (amt > 0) {
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(6); setText(soles);
+          doc.text(shortSoles(amt), p.x, p.v > 0 ? p.y - 4.2 : B - 1.2, { align: 'center' });
+        }
       });
     } else {
-      setDraw(main); doc.setLineWidth(0.7);
-      // Solo se unen meses consecutivos CON datos
-      for (let i = 1; i < pts.length; i++) if (pts[i - 1].v > 0 && pts[i].v > 0) doc.line(pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y);
+      setDraw(plotColor); doc.setLineWidth(0.7);
+      // Se unen meses consecutivos CON recibo registrado (incluye consumo 0)
+      for (let i = 1; i < pts.length; i++) if (present[i - 1] && present[i]) doc.line(pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y);
       pts.forEach((p, i) => {
-        if (p.v <= 0) return;
+        if (!present[i]) return;
         const isHi = i === d.selectedIndex;
-        doc.setLineWidth(0.5); setDraw(main);
-        if (isHi) { setFill(main); } else { doc.setFillColor(255, 255, 255); }
+        doc.setLineWidth(0.5); setDraw(plotColor);
+        if (isHi) { setFill(plotColor); } else { doc.setFillColor(255, 255, 255); }
         doc.circle(p.x, p.y, isHi ? 1.5 : 1.0, 'FD');
-        if (p.v > 0) { doc.setFont('helvetica', isHi ? 'bold' : 'normal'); doc.setFontSize(6.5); setText(isHi ? dark : gray); doc.text(shortNum(p.v), p.x, p.y - 2.4, { align: 'center' }); }
+        doc.setFont('helvetica', isHi ? 'bold' : 'normal'); doc.setFontSize(6.5); setText(isHi ? dark : gray);
+        doc.text(fmtVal(p.v), p.x, p.y - 2.4, { align: 'center' });
+        const amt = amounts[i] || 0;
+        if (amt > 0) {
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(6); setText(soles);
+          doc.text(shortSoles(amt), p.x, p.y - 5.4, { align: 'center' });
+        }
       });
     }
     d.monthLabels.forEach((m, i) => {
@@ -180,17 +210,18 @@ export function buildReceiptPdf(JsPDF: typeof JsPDFType, d: ReceiptPdfData): JsP
   };
 
   const chartH = 58;
-  chartFrame(`Consumo mensual del predio (${unit}) - columnas`, y, chartH);
-  if (hasData) plot(y, chartH, 'bar');
-  else { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); setText(gray); doc.text('Sin lecturas registradas para este predio.', PW / 2, y + chartH / 2 + 2, { align: 'center' }); }
+  const emptyMsg = 'Sin recibos registrados para este predio.';
+  chartFrame(`Consumo mensual del predio (${unit}) y monto facturado (S/) - columnas`, y, chartH);
+  if (hasAny) plot(y, chartH, 'bar');
+  else { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); setText(gray); doc.text(emptyMsg, PW / 2, y + chartH / 2 + 2, { align: 'center' }); }
   y += chartH + 5;
-  chartFrame(`Evolución del consumo del predio (${unit}) - líneas`, y, chartH);
-  if (hasData) plot(y, chartH, 'line');
-  else { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); setText(gray); doc.text('Sin lecturas registradas para este predio.', PW / 2, y + chartH / 2 + 2, { align: 'center' }); }
+  chartFrame(`Evolución del consumo (${unit}) y monto facturado (S/) - líneas`, y, chartH);
+  if (hasAny) plot(y, chartH, 'line');
+  else { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); setText(gray); doc.text(emptyMsg, PW / 2, y + chartH / 2 + 2, { align: 'center' }); }
   y += chartH + 5;
 
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); setText(dark);
-  doc.text(`Consumo anual registrado: ${fmtNum(total)} ${unit}   |   Promedio por mes con lecturas: ${withData > 0 ? fmtNum(total / withData) : '0'} ${unit}`, M, y);
+  doc.text(`Consumo anual registrado: ${fmtNum(total)} ${unit}   |   Promedio por mes con consumo: ${withData > 0 ? fmtNum(total / withData) : '0'} ${unit}   |   Gasto anual: ${fmtSoles(totalSoles)}`, M, y);
 
   // ---------- Pie ----------
   const now = new Date();

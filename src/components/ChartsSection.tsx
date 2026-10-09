@@ -298,11 +298,12 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({ utilityType, recor
               <LineChart
                 labels={barsIdx.map(i => MONTH_LABELS[MONTH_KEYS[i]])}
                 values={barsIdx.map(i => monthlyConsumption[i])}
+                present={barsIdx.map(i => monthlyTotals[i] > 0 || monthlyConsumption[i] > 0)}
                 color={utilityType === 'energy' ? '#004ac6' : '#00687a'}
                 unit={unitLabel}
                 highlightIndex={periodType === 'monthly' ? barsIdx.indexOf(periodIdx[0]) : null}
                 height={190}
-                emptyMessage={`Sin lecturas registradas en este período. El consumo (${unitLabel}) se calcula con la lectura anterior y la actual de cada recibo.`}
+                emptyMessage={`Sin recibos registrados en este período.`}
               />
             </div>
           )}
