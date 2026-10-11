@@ -11,6 +11,7 @@ import {
   LEGACY_WATER_KEY,
   MIGRATION_FLAG_KEY,
   MONTH_KEYS,
+  MonthKey,
   buildMonthlyDetailsForForm,
   findExistingSupply,
   loadRecordsFromStorage
@@ -80,6 +81,8 @@ export default function App() {
 
   const [isSupplyModalOpen, setIsSupplyModalOpen] = useState(false);
   const [recordToEdit, setRecordToEdit] = useState<SupplyRecord | null>(null);
+  // Mes en que se abre el lápiz (desde "Revisar llenado"); null = mes siguiente al último con datos
+  const [editStartMonth, setEditStartMonth] = useState<MonthKey | null>(null);
 
   // Estados para el Modal de Recibos Inteligentes
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
@@ -232,16 +235,24 @@ export default function App() {
           setFilters={setFilters}
           onShowToast={showToast}
           onOpenNewModal={() => {
+            setEditStartMonth(null);
             setRecordToEdit(null);
             setIsSupplyModalOpen(true);
           }}
           onOpenEditModal={(rec) => {
+            setEditStartMonth(null);
             setRecordToEdit(rec);
             setIsSupplyModalOpen(true);
           }}
           onOpenDeleteModal={handleDeleteRecord}
           onMergeDuplicates={handleMergeDuplicates}
           onOpenEditFromDuplicates={(rec: SupplyRecord) => {
+            setEditStartMonth(null);
+            setRecordToEdit(rec);
+            setIsSupplyModalOpen(true);
+          }}
+          onOpenEditAtMonth={(rec: SupplyRecord, month: MonthKey) => {
+            setEditStartMonth(month);
             setRecordToEdit(rec);
             setIsSupplyModalOpen(true);
           }}
@@ -262,7 +273,11 @@ export default function App() {
         utilityType={utilityType}
         onShowToast={showToast}
         existingRecords={records}
-        onSwitchToEdit={(rec) => setRecordToEdit(rec)}
+        onSwitchToEdit={(rec) => {
+          setEditStartMonth(null);
+          setRecordToEdit(rec);
+        }}
+        initialMonth={editStartMonth}
       />
 
       {/* Modal Inteligente de Recibos por Mes */}

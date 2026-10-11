@@ -325,3 +325,152 @@ export const mergeDuplicateGroup = (group: SupplyRecord[]): MergeResult => {
 
   return { merged, removeIds: ranked.slice(1).map(r => r.id), conflicts };
 };
+
+// ============================================================
+// Llenado asistido del formulario (11/10/2026)
+// ============================================================
+
+// Un mes del formulario está totalmente vacío (nada escrito)
+export const isEmptyMonthDetail = (d: Partial<MonthDetail> | undefined): boolean =>
+  !d ||
+  ((d.receipt || '').toString().trim() === '' &&
+    !(Number(d.previousReading) > 0) &&
+    !(Number(d.currentReading) > 0) &&
+    !(Number(d.consumption) > 0) &&
+    !(Number(d.amount) > 0));
+
+// Un mes ya guardado (se ve en verde): tiene monto, consumo o N° de recibo
+export const detailHasSavedData = (d: Partial<MonthDetail> | undefined): boolean =>
+  !!d && (Number(d.amount) > 0 || Number(d.consumption) > 0 || (d.receipt || '').toString().trim() !== '');
+
+// Última lectura actual REAL (mayor que 0) antes del mes indicado.
+// Salta los meses sin lectura. Devuelve 0 si no hay ninguna.
+export const lastRealReadingBefore = (details: Record<MonthKey, MonthDetail>, month: MonthKey): number => {
+  const idx = MONTH_KEYS.indexOf(month);
+  for (let i = idx - 1; i >= 0; i--) {
+    const r = Number(details[MONTH_KEYS[i]]?.currentReading) || 0;
+    if (r > 0) return r;
+  }
+  return 0;
+};
+
+// Mes en que se abre el lápiz: el siguiente al último mes con datos
+export const nextMonthToFill = (record: SupplyRecord | null): MonthKey => {
+  if (!record) return 'ene';
+  const last = getLatestMonthWithData(record);
+  if (!last) return 'ene';
+  const idx = MONTH_KEYS.indexOf(last);
+  return MONTH_KEYS[Math.min(idx + 1, MONTH_KEYS.length - 1)];
+};
+
+// ============================================================
+// Revisar llenado: detecta meses que pudieron quedar mal llenados
+// (solo informa; nunca cambia datos)
+// ============================================================
+export type FillingIssueType = 'hueco' | 'lecturas' | 'recibo' | 'atrasado';
+
+export interface FillingIssue {
+  type: FillingIssueType;
+  month: MonthKey; // mes que se abre con el lápiz para corregir
+  message: string;
+}
+
+export interface FillingReport {
+  record: SupplyRecord;
+  issues: FillingIssue[];
+}
+
+const fmtReading = (n: number) => Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
+
+export const findFillingIssues = (records: SupplyRecord[], utilityType: UtilityType): FillingReport[] => {
+  const list = records.filter(r => r.utilityType === utilityType);
+
+  // Último mes con datos más frecuente (a dónde llega la mayoría)
+  const lastIdx = list
+    .map(r => getLatestMonthWithData(r))
+    .filter((m): m is MonthKey => !!m)
+    .map(m => MONTH_KEYS.indexOf(m));
+  const counts: Record<number, number> = {};
+  lastIdx.forEach(i => (counts[i] = (counts[i] || 0) + 1));
+  let modeIdx = -1;
+  let modeCount = 0;
+  Object.keys(counts).forEach(k => {
+    const i = Number(k);
+    if (counts[i] > modeCount || (counts[i] === modeCount && i > modeIdx)) {
+      modeIdx = i;
+      modeCount = counts[i];
+    }
+  });
+
+  const reports: FillingReport[] = [];
+  list.forEach(record => {
+    if (!hasMonthlyDetails(record)) return;
+    const details = buildMonthlyDetailsForForm(record);
+    const issues: FillingIssue[] = [];
+    const withData = MONTH_KEYS.filter(m => detailHasSavedData(details[m]));
+    if (withData.length === 0) return;
+    const firstIdx = MONTH_KEYS.indexOf(withData[0]);
+    const lastIdxRec = MONTH_KEYS.indexOf(withData[withData.length - 1]);
+
+    // 1) Mes vacío entre meses con datos
+    for (let i = firstIdx + 1; i < lastIdxRec; i++) {
+      const m = MONTH_KEYS[i];
+      if (!detailHasSavedData(details[m])) {
+        issues.push({
+          type: 'hueco',
+          month: m,
+          message: `${MONTH_FULL_NAMES[m].toUpperCase()} está vacío, pero hay meses con datos antes y después. Puede que su recibo se haya escrito en otro mes.`
+        });
+      }
+    }
+
+    // 2) Lecturas que no encadenan: lectura anterior ≠ lectura actual del mes previo con lectura
+    let prevMonth: MonthKey | null = null;
+    MONTH_KEYS.forEach(m => {
+      const d = details[m];
+      const prevR = Number(d.previousReading) || 0;
+      const currR = Number(d.currentReading) || 0;
+      if (prevR > 0 && prevMonth) {
+        const before = Number(details[prevMonth].currentReading) || 0;
+        if (Math.abs(before - prevR) > 0.01) {
+          issues.push({
+            type: 'lecturas',
+            month: m,
+            message: `La lectura anterior de ${MONTH_FULL_NAMES[m].toUpperCase()} (${fmtReading(prevR)}) no coincide con la lectura actual de ${MONTH_FULL_NAMES[prevMonth].toUpperCase()} (${fmtReading(before)}). Compare ambos meses con sus recibos (también puede ser cambio de medidor).`
+          });
+        }
+      }
+      if (currR > 0) prevMonth = m;
+    });
+
+    // 3) Mismo N° de recibo en dos o más meses
+    const byReceipt: Record<string, MonthKey[]> = {};
+    MONTH_KEYS.forEach(m => {
+      const rc = (details[m].receipt || '').toString().trim().toUpperCase();
+      if (rc) (byReceipt[rc] = byReceipt[rc] || []).push(m);
+    });
+    Object.keys(byReceipt).forEach(rc => {
+      const ms = byReceipt[rc];
+      if (ms.length > 1) {
+        issues.push({
+          type: 'recibo',
+          month: ms[0],
+          message: `El recibo ${rc} está registrado en ${ms.map(x => MONTH_FULL_NAMES[x].toUpperCase()).join(' y ')}. Cada mes debe tener su propio recibo.`
+        });
+      }
+    });
+
+    // 4) Suministro atrasado respecto a la mayoría
+    if (modeIdx >= 0 && lastIdxRec < modeIdx) {
+      const next = MONTH_KEYS[lastIdxRec + 1];
+      issues.push({
+        type: 'atrasado',
+        month: next,
+        message: `Su último mes con datos es ${MONTH_FULL_NAMES[MONTH_KEYS[lastIdxRec]].toUpperCase()}; la mayoría de suministros llega hasta ${MONTH_FULL_NAMES[MONTH_KEYS[modeIdx]].toUpperCase()}. Verifique si falta registrar ${MONTH_FULL_NAMES[next].toUpperCase()} o si su recibo quedó en el mes anterior.`
+      });
+    }
+
+    if (issues.length > 0) reports.push({ record, issues });
+  });
+  return reports;
+};
