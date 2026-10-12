@@ -4,6 +4,17 @@ import { ChartsSection } from './components/ChartsSection';
 import { DataTableSection } from './components/DataTableSection';
 import { SupplyModal } from './components/SupplyModal';
 import { ReceiptModal } from './components/ReceiptModal';
+import { CloudBackupBar, ImportMode } from './components/CloudBackupBar';
+import {
+  BackupPayload,
+  CONSULT_MODE_KEY,
+  SAFETY_COPY_KEY,
+  buildPayload,
+  downloadText,
+  getConsultInfo,
+  minuteStamp,
+  safeSet
+} from './cloudBackup';
 import { Zap, Droplet, User, ShieldCheck, CheckCircle2, AlertTriangle, Info } from 'lucide-react';
 import {
   STORAGE_KEY,
@@ -14,7 +25,8 @@ import {
   MonthKey,
   buildMonthlyDetailsForForm,
   findExistingSupply,
-  loadRecordsFromStorage
+  loadRecordsFromStorage,
+  isUntouchedSample
 } from './recordUtils';
 
 const initialDefaultRecords: SupplyRecord[] = [
@@ -50,7 +62,9 @@ const initialDefaultRecords: SupplyRecord[] = [
 
 export default function App() {
   const [utilityType, setUtilityType] = useState<UtilityType>('energy');
-  const [role, setRole] = useState<UserRole>('admin');
+  // Modo consulta: equipo del administrador o del jefe con datos traídos de la nube
+  const [consultInfo, setConsultInfo] = useState(() => getConsultInfo());
+  const [role, setRole] = useState<UserRole>(() => (getConsultInfo() ? 'consult' : 'admin'));
 
   // Inicializar registros desde localStorage.
   // Incluye los datos guardados por versiones anteriores (claves antiguas),
@@ -75,6 +89,9 @@ export default function App() {
       console.error('Error al guardar en localStorage:', e);
     }
   }, [records]);
+
+  // ¿Este equipo solo tiene los datos de ejemplo? (nunca se suben a la nube)
+  const isSampleOnly = records.length > 0 && records.every(r => isUntouchedSample(r, initialDefaultRecords));
 
   const [filters, setFilters] = useState<FilterState>({ search: '', year: 'all', debtFilter: 'all', categoryFilter: 'ALL', statusFilter: 'all' });
   const [toast, setToast] = useState<{ title: string; message: string; type: 'success' | 'warning' | 'info' | 'error' } | null>(null);
@@ -145,6 +162,34 @@ export default function App() {
     showToast('Copias unidas', `El suministro ${merged.supplyNumber} quedó en un solo registro con todos sus meses.`, 'success');
   };
 
+  // Traer los datos de la nube (reemplaza los de este equipo, con copia de seguridad previa)
+  const handleImportFromCloud = (payload: BackupPayload, mode: ImportMode) => {
+    if (records.length > 0 && !isSampleOnly) {
+      const copy = JSON.stringify(buildPayload(records), null, 1);
+      safeSet(SAFETY_COPY_KEY, copy);
+      downloadText(`infradash-copia-antes-de-importar-${minuteStamp()}.json`, copy);
+    }
+    setRecords(payload.records);
+    if (mode === 'consulta') {
+      const info = { importedAt: new Date().toISOString(), backupAt: payload.createdAt };
+      safeSet(CONSULT_MODE_KEY, JSON.stringify(info));
+      setConsultInfo(info);
+      setRole('consult');
+      showToast('Datos de la nube', `Se trajeron ${payload.totalRecords} suministros. Modo consulta activado.`, 'success');
+    } else {
+      safeSet(CONSULT_MODE_KEY, null);
+      setConsultInfo(null);
+      setRole('admin');
+      showToast('Datos de la nube', `Se trajeron ${payload.totalRecords} suministros. Este equipo puede seguir registrando.`, 'success');
+    }
+  };
+
+  const handleExitConsult = () => {
+    safeSet(CONSULT_MODE_KEY, null);
+    setConsultInfo(null);
+    showToast('Modo consulta desactivado', 'Este equipo ya puede registrar y respaldar.', 'info');
+  };
+
   const handleDeleteRecord = (record: SupplyRecord) => {
     if (confirm(`¿Está seguro de eliminar el suministro ${record.supplyNumber}?`)) {
       setRecords(prev => prev.filter(r => r.id !== record.id));
@@ -181,7 +226,14 @@ export default function App() {
           <div className="flex items-center gap-3">
             <div className="bg-slate-100 p-1 rounded-xl flex items-center text-xs">
               <button
-                onClick={() => setRole('admin')}
+                onClick={() => {
+                  if (consultInfo) {
+                    showToast('Modo consulta', 'Este equipo solo consulta los datos de la nube. No se puede editar aquí.', 'info');
+                    return;
+                  }
+                  setRole('admin');
+                }}
+                title={consultInfo ? 'Modo consulta: no se puede editar en este equipo' : undefined}
                 className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
                   role === 'admin' ? 'bg-white text-[#004ac6] shadow-xs' : 'text-[#434655] hover:text-slate-900'
                 }`}
@@ -221,6 +273,15 @@ export default function App() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-6 flex-1 w-full flex flex-col gap-6">
+        <CloudBackupBar
+          records={records}
+          isSampleOnly={isSampleOnly}
+          consultInfo={consultInfo}
+          onImport={handleImportFromCloud}
+          onExitConsult={handleExitConsult}
+          onShowToast={showToast}
+        />
+
         <ChartsSection
           utilityType={utilityType}
           records={records.filter(r => r.utilityType === utilityType)}
