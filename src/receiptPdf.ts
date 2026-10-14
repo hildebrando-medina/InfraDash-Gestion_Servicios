@@ -77,13 +77,41 @@ export function buildReceiptPdf(JsPDF: typeof JsPDFType, d: ReceiptPdfData): JsP
 
   let y = 38;
   // ---------- Datos del predio ----------
-  setFill(hex('#f8fafc')); setDraw(line); doc.roundedRect(M, y, CW, 30, 2, 2, 'FD');
+  // Los nombres largos bajan a una 2.ª línea dentro de su columna (no invaden la columna de al lado).
   const c2 = M + CW / 2 + 4;
-  label('Predio / Sede', M + 5, y + 7); value(d.propertyName || '-', M + 5, y + 12.5, 11);
-  label('Categoría / Ubicación', c2, y + 7); value(d.category || '-', c2, y + 12.5, 10);
-  label('N° de medidor / suministro', M + 5, y + 20); value(d.supplyNumber || '-', M + 5, y + 25.5, 10);
-  label('N° de comprobante / recibo', c2, y + 20); value(d.receiptNumber || 'S/N', c2, y + 25.5, 10, main);
-  y += 37;
+  const colW = CW / 2 - 9; // ancho disponible de cada columna
+  const fitText = (t: string, size: number, maxLines: number): { lines: string[]; size: number } => {
+    doc.setFont('helvetica', 'bold');
+    let s = size;
+    let lines: string[] = [];
+    for (;;) {
+      doc.setFontSize(s);
+      lines = doc.splitTextToSize(t, colW) as string[];
+      if (lines.length <= maxLines || s <= 8) break;
+      s -= 0.5;
+    }
+    if (lines.length > maxLines) {
+      lines = lines.slice(0, maxLines);
+      let last = lines[maxLines - 1];
+      while (last.length > 1 && doc.getTextWidth(last + '...') > colW) last = last.slice(0, -1);
+      lines[maxLines - 1] = last.trimEnd() + '...';
+    }
+    return { lines, size: s };
+  };
+  const nameFit = fitText(d.propertyName || '-', 11, 2);
+  const catFit = fitText(d.category || '-', 10, 2);
+  const extraLines = Math.max(nameFit.lines.length, catFit.lines.length) - 1;
+  const extra = extraLines * 4.6; // alto adicional por la 2.ª línea
+  const multi = (f: { lines: string[]; size: number }, x: number, yy: number, color: RGB = dark) => {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(f.size); setText(color);
+    f.lines.forEach((l, i) => doc.text(l, x, yy + i * 4.6));
+  };
+  setFill(hex('#f8fafc')); setDraw(line); doc.roundedRect(M, y, CW, 30 + extra, 2, 2, 'FD');
+  label('Predio / Sede', M + 5, y + 7); multi(nameFit, M + 5, y + 12.5);
+  label('Categoría / Ubicación', c2, y + 7); multi(catFit, c2, y + 12.5);
+  label('N° de medidor / suministro', M + 5, y + 20 + extra); value(d.supplyNumber || '-', M + 5, y + 25.5 + extra, 10);
+  label('N° de comprobante / recibo', c2, y + 20 + extra); value(d.receiptNumber || 'S/N', c2, y + 25.5 + extra, 10, main);
+  y += 37 + extra;
 
   // ---------- Consumo del mes ----------
   setFill(soft); setDraw(line); doc.roundedRect(M, y, CW, 34, 2, 2, 'FD');
@@ -209,7 +237,8 @@ export function buildReceiptPdf(JsPDF: typeof JsPDFType, d: ReceiptPdfData): JsP
     });
   };
 
-  const chartH = 58;
+  // Si el nombre del predio ocupó 2 líneas, los gráficos se acortan un poco para que todo siga en una página
+  const chartH = 58 - extra / 2;
   const emptyMsg = 'Sin recibos registrados para este predio.';
   chartFrame(`Consumo mensual del predio (${unit}) y monto facturado (S/) - columnas`, y, chartH);
   if (hasAny) plot(y, chartH, 'bar');
