@@ -373,12 +373,23 @@ export interface FillingIssue {
   type: FillingIssueType;
   month: MonthKey; // mes que se abre con el lápiz para corregir
   message: string;
+  key: string; // identifica el aviso (para marcarlo como revisado)
+  reviewed?: { reason: string; at: string };
 }
 
 export interface FillingReport {
   record: SupplyRecord;
-  issues: FillingIssue[];
+  issues: FillingIssue[]; // avisos pendientes
+  reviewed: FillingIssue[]; // avisos que el técnico marcó como correctos
 }
+
+// Motivos para marcar un aviso como correcto, según el tipo de aviso
+export const REVIEW_REASONS: Record<FillingIssueType, string[]> = {
+  lecturas: ['Cambio de medidor', 'Lecturas correctas según el recibo'],
+  hueco: ['El recibo aún no llega', 'Ese mes no tiene recibo'],
+  recibo: ['El N° de recibo es correcto'],
+  atrasado: ['El recibo aún no llega']
+};
 
 const fmtReading = (n: number) => Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
 
@@ -418,6 +429,7 @@ export const findFillingIssues = (records: SupplyRecord[], utilityType: UtilityT
       if (!detailHasSavedData(details[m])) {
         issues.push({
           type: 'hueco',
+          key: `hueco:${m}`,
           month: m,
           message: `${MONTH_FULL_NAMES[m].toUpperCase()} está vacío, pero hay meses con datos antes y después. Puede que su recibo se haya escrito en otro mes.`
         });
@@ -435,6 +447,7 @@ export const findFillingIssues = (records: SupplyRecord[], utilityType: UtilityT
         if (Math.abs(before - prevR) > 0.01) {
           issues.push({
             type: 'lecturas',
+            key: `lecturas:${m}:${prevR}:${before}`,
             month: m,
             message: `La lectura anterior de ${MONTH_FULL_NAMES[m].toUpperCase()} (${fmtReading(prevR)}) no coincide con la lectura actual de ${MONTH_FULL_NAMES[prevMonth].toUpperCase()} (${fmtReading(before)}). Compare ambos meses con sus recibos (también puede ser cambio de medidor).`
           });
@@ -454,6 +467,7 @@ export const findFillingIssues = (records: SupplyRecord[], utilityType: UtilityT
       if (ms.length > 1) {
         issues.push({
           type: 'recibo',
+          key: `recibo:${rc}:${ms.join(',')}`,
           month: ms[0],
           message: `El recibo ${rc} está registrado en ${ms.map(x => MONTH_FULL_NAMES[x].toUpperCase()).join(' y ')}. Cada mes debe tener su propio recibo.`
         });
@@ -465,12 +479,16 @@ export const findFillingIssues = (records: SupplyRecord[], utilityType: UtilityT
       const next = MONTH_KEYS[lastIdxRec + 1];
       issues.push({
         type: 'atrasado',
+        key: `atrasado:${next}`,
         month: next,
         message: `Su último mes con datos es ${MONTH_FULL_NAMES[MONTH_KEYS[lastIdxRec]].toUpperCase()}; la mayoría de suministros llega hasta ${MONTH_FULL_NAMES[MONTH_KEYS[modeIdx]].toUpperCase()}. Verifique si falta registrar ${MONTH_FULL_NAMES[next].toUpperCase()} o si su recibo quedó en el mes anterior.`
       });
     }
 
-    if (issues.length > 0) reports.push({ record, issues });
+    const marks = record.reviewedIssues || {};
+    const pending = issues.filter(i => !marks[i.key]);
+    const done = issues.filter(i => !!marks[i.key]).map(i => ({ ...i, reviewed: marks[i.key] }));
+    if (pending.length > 0 || done.length > 0) reports.push({ record, issues: pending, reviewed: done });
   });
   return reports;
 };

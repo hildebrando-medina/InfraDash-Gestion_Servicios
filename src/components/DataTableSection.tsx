@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Eye, Edit2, Trash2, Search, Filter, AlertCircle, Plus, FileSpreadsheet, Calendar, Copy, X, Merge, ClipboardCheck } from 'lucide-react';
+import { Eye, Edit2, Trash2, Search, Filter, AlertCircle, Plus, FileSpreadsheet, Calendar, Copy, X, Merge, ClipboardCheck, CheckCircle2, RotateCcw } from 'lucide-react';
 import { SupplyRecord, UtilityType, UserRole, FilterState } from '../types';
 import {
   MONTH_KEYS,
@@ -16,6 +16,8 @@ import {
   mergeDuplicateGroup,
   formatNumber,
   findFillingIssues,
+  REVIEW_REASONS,
+  FillingIssue,
   MONTH_FULL_NAMES
 } from '../recordUtils';
 
@@ -50,7 +52,8 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
   onOpenNewModal,
   onOpenEditFromDuplicates,
   onMergeDuplicates,
-  onOpenEditAtMonth
+  onOpenEditAtMonth,
+  onMarkIssueReviewed
 }) => {
   const [itemsPerPage, setItemsPerPage] = useState<number>(10);
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -63,6 +66,12 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
   // Revisar llenado: también se recalcula en vivo al corregir cada predio
   const [showFillingReview, setShowFillingReview] = useState<boolean>(false);
   const fillingReports = showFillingReview ? findFillingIssues(records, utilityType) : null;
+  const activeReports = fillingReports ? fillingReports.filter(r => r.issues.length > 0) : null;
+  const reviewedReports = fillingReports ? fillingReports.filter(r => r.reviewed.length > 0) : null;
+  const reviewedCount = reviewedReports ? reviewedReports.reduce((n, r) => n + r.reviewed.length, 0) : 0;
+  const [reasonsOpen, setReasonsOpen] = useState<string | null>(null); // aviso con la lista de motivos abierta
+  const [showReviewed, setShowReviewed] = useState<boolean>(false);
+  const canMark = role === 'admin' && !!onMarkIssueReviewed;
 
   const unitLabel = utilityType === 'energy' ? 'kW-h' : 'm³';
 
@@ -107,7 +116,7 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
   };
 
   const handleReviewFilling = () => {
-    const reports = findFillingIssues(records, utilityType);
+    const reports = findFillingIssues(records, utilityType).filter(r => r.issues.length > 0);
     setShowFillingReview(true);
     if (reports.length === 0 && onShowToast) {
       onShowToast('Llenado correcto', `No se encontraron meses sospechosos en ${utilityType === 'energy' ? 'Energía' : 'Agua'}.`, 'success');
@@ -266,23 +275,27 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
         </div>
       </div>
 
-      {fillingReports && fillingReports.length === 0 && (
-        <div className="mb-4 bg-emerald-50 border border-emerald-300 rounded-xl p-4 text-xs text-emerald-900 flex items-start justify-between gap-3">
-          <p className="font-bold text-sm">Revisar llenado: no se encontraron meses sospechosos.</p>
+      {activeReports && activeReports.length === 0 && (
+        <div className="mb-4 bg-emerald-50 border border-emerald-300 rounded-xl p-4 text-xs text-emerald-900 flex items-start justify-between gap-3" data-testid="revisar-ok">
+          <div>
+            <p className="font-bold text-sm">Revisar llenado: no se encontraron meses pendientes de revisar.</p>
+            {reviewedCount > 0 && <p>{reviewedCount} aviso(s) ya fueron marcados como correctos (ver abajo).</p>}
+          </div>
           <button onClick={() => setShowFillingReview(false)} className="p-1 rounded hover:bg-emerald-100 cursor-pointer" title="Cerrar">
             <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
-      {fillingReports && fillingReports.length > 0 && (
+      {activeReports && activeReports.length > 0 && (
         <div className="mb-4 bg-orange-50 border border-orange-300 rounded-xl p-4 text-xs text-orange-950" data-testid="revisar-llenado">
           <div className="flex items-start justify-between gap-3 mb-3">
             <div>
-              <p className="font-bold text-sm">Revisar llenado: {fillingReports.length} suministro(s) con meses para revisar</p>
+              <p className="font-bold text-sm">Revisar llenado: {activeReports.length} suministro(s) con meses para revisar</p>
               <p>
-                Tenga a mano el recibo físico. Presione el lápiz de cada aviso: se abre ese suministro en el mes indicado.
-                Compare con el recibo y corrija. Esta lista no cambia ningún dato; se actualiza sola al corregir.
+                Tenga a mano el recibo físico. Si el dato está mal, presione <strong>Corregir</strong>: se abre ese suministro en el mes indicado.
+                Si el aviso es correcto (por ejemplo, <strong>cambio de medidor</strong> o un <strong>recibo que aún no llega</strong>), presione{' '}
+                <strong>"Está correcto"</strong> y elija el motivo: el aviso sale de la lista.
               </p>
             </div>
             <button onClick={() => setShowFillingReview(false)} className="p-1 rounded hover:bg-orange-100 cursor-pointer" title="Cerrar">
@@ -290,30 +303,98 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
             </button>
           </div>
           <div className="flex flex-col gap-3">
-            {fillingReports.map(rep => (
+            {activeReports.map(rep => (
               <div key={rep.record.id} className="bg-white border border-orange-200 rounded-lg p-3">
                 <p className="font-bold mb-2">
                   <span className="font-mono">{rep.record.supplyNumber}</span> — {rep.record.propertyName || rep.record.address}
                 </p>
                 <div className="flex flex-col gap-1.5">
-                  {rep.issues.map((iss, i) => (
-                    <div key={i} className="flex flex-wrap items-center justify-between gap-2 border-t border-orange-100 pt-1.5">
-                      <span className="flex-1 min-w-[240px]">{iss.message}</span>
-                      {role === 'admin' && onOpenEditAtMonth && (
-                        <button
-                          onClick={() => onOpenEditAtMonth(rep.record, iss.month)}
-                          className="px-2 py-1 rounded bg-orange-600 hover:bg-orange-700 text-white font-semibold flex items-center gap-1 cursor-pointer shrink-0"
-                          title={`Abrir ${MONTH_FULL_NAMES[iss.month]} con el lápiz`}
-                        >
-                          <Edit2 className="w-3.5 h-3.5" /> Corregir {iss.month.toUpperCase()}
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                  {rep.issues.map((iss: FillingIssue) => {
+                    const openId = `${rep.record.id}|${iss.key}`;
+                    return (
+                      <div key={iss.key} className="border-t border-orange-100 pt-1.5" data-testid="aviso-pendiente">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="flex-1 min-w-[240px]">{iss.message}</span>
+                          <div className="flex gap-2 shrink-0">
+                            {canMark && (
+                              <button
+                                onClick={() => setReasonsOpen(reasonsOpen === openId ? null : openId)}
+                                className="px-2 py-1 rounded border border-emerald-500 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 font-semibold flex items-center gap-1 cursor-pointer"
+                                title="El dato está bien: quitar este aviso de la lista"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" /> Está correcto
+                              </button>
+                            )}
+                            {role === 'admin' && onOpenEditAtMonth && (
+                              <button
+                                onClick={() => onOpenEditAtMonth(rep.record, iss.month)}
+                                className="px-2 py-1 rounded bg-orange-600 hover:bg-orange-700 text-white font-semibold flex items-center gap-1 cursor-pointer"
+                                title={`Abrir ${MONTH_FULL_NAMES[iss.month]} con el lápiz`}
+                              >
+                                <Edit2 className="w-3.5 h-3.5" /> Corregir {iss.month.toUpperCase()}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        {canMark && reasonsOpen === openId && (
+                          <div className="mt-2 flex flex-wrap items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg p-2" data-testid="motivos">
+                            <span className="font-semibold text-emerald-900">¿Por qué está correcto?</span>
+                            {REVIEW_REASONS[iss.type].map(reason => (
+                              <button
+                                key={reason}
+                                onClick={() => {
+                                  onMarkIssueReviewed(rep.record, iss.key, reason);
+                                  setReasonsOpen(null);
+                                }}
+                                className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-semibold cursor-pointer"
+                              >
+                                {reason}
+                              </button>
+                            ))}
+                            <button onClick={() => setReasonsOpen(null)} className="px-2 py-1 rounded text-slate-600 hover:bg-slate-100 cursor-pointer">
+                              Cancelar
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {reviewedReports && reviewedCount > 0 && (
+        <div className="mb-4 bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-800" data-testid="avisos-revisados">
+          <button onClick={() => setShowReviewed(!showReviewed)} className="font-semibold flex items-center gap-1.5 cursor-pointer hover:underline">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Avisos marcados como correctos: {reviewedCount} {showReviewed ? '(ocultar)' : '(ver)'}
+          </button>
+          {showReviewed && (
+            <div className="mt-2 flex flex-col gap-1.5">
+              {reviewedReports.map(rep =>
+                rep.reviewed.map((iss: FillingIssue) => (
+                  <div key={rep.record.id + iss.key} className="flex flex-wrap items-center justify-between gap-2 bg-white border border-slate-200 rounded-lg px-2 py-1.5" data-testid="aviso-revisado">
+                    <span className="flex-1 min-w-[240px]">
+                      <span className="font-mono font-semibold">{rep.record.supplyNumber}</span> — {MONTH_FULL_NAMES[iss.month]}:{' '}
+                      <strong>{iss.reviewed?.reason}</strong>
+                      {iss.reviewed?.at ? ` (marcado el ${new Date(iss.reviewed.at).toLocaleDateString('es-PE')})` : ''}
+                    </span>
+                    {canMark && (
+                      <button
+                        onClick={() => onMarkIssueReviewed(rep.record, iss.key, null)}
+                        className="px-2 py-1 rounded border border-slate-300 hover:bg-slate-100 font-semibold flex items-center gap-1 cursor-pointer"
+                        title="Volver a mostrar este aviso en la lista"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" /> Volver a mostrar
+                      </button>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </div>
       )}
 

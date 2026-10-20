@@ -45,6 +45,9 @@ export interface SupplyRecord {
     consumption: number;
     amount: number;
   }>;
+  // Avisos de "Revisar llenado" que el técnico confirmó como correctos
+  // (ej. cambio de medidor o recibo que aún no llega). clave del aviso -> motivo y fecha
+  reviewedIssues?: Record<string, { reason: string; at: string }>;
 }
 
 export interface FilterState {

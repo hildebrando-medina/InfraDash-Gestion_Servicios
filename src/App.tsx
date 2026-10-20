@@ -154,6 +154,30 @@ export default function App() {
     });
   };
 
+  // "Revisar llenado": marcar un aviso como correcto (reason) o volver a mostrarlo (null)
+  const handleMarkIssueReviewed = (record: SupplyRecord, key: string, reason: string | null) => {
+    if (consultInfo) {
+      showToast('Modo consulta', 'Este equipo solo consulta los datos de la nube. No se puede editar aquí.', 'info');
+      return;
+    }
+    setRecords(prev =>
+      prev.map(r => {
+        if (r.id !== record.id) return r;
+        const marks = { ...(r.reviewedIssues || {}) };
+        if (reason) marks[key] = { reason, at: new Date().toISOString() };
+        else delete marks[key];
+        return { ...r, reviewedIssues: marks };
+      })
+    );
+    showToast(
+      reason ? 'Aviso revisado' : 'Aviso restaurado',
+      reason
+        ? `Suministro ${record.supplyNumber}: "${reason}". El aviso salió de la lista (se puede volver a mostrar).`
+        : `Suministro ${record.supplyNumber}: el aviso vuelve a la lista de Revisar llenado.`,
+      'success'
+    );
+  };
+
   // Une copias duplicadas: guarda el registro unido y elimina las copias sobrantes
   const handleMergeDuplicates = (merged: SupplyRecord, removeIds: string[]) => {
     setRecords(prev => prev
@@ -312,6 +336,7 @@ export default function App() {
             setRecordToEdit(rec);
             setIsSupplyModalOpen(true);
           }}
+          onMarkIssueReviewed={handleMarkIssueReviewed}
           onOpenEditAtMonth={(rec: SupplyRecord, month: MonthKey) => {
             setEditStartMonth(month);
             setRecordToEdit(rec);
