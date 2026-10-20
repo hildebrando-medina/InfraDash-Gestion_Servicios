@@ -36,10 +36,21 @@ interface ReportsModalProps {
 const baseInput = 'border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-300';
 const inputCls = 'w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-300';
 
-const Field = ({ label, value, set, list, testid }: { label: string; value: string; set: (v: string) => void; list?: string; testid?: string }) => (
+const Field = ({ label, value, set, list, testid, error }: { label: string; value: string; set: (v: string) => void; list?: string; testid?: string; error?: string }) => (
   <label className="flex flex-col gap-0.5">
-    <span className="font-semibold text-slate-700">{label}</span>
-    <input className={inputCls} value={value} onChange={e => set(e.target.value)} list={list} data-testid={testid} />
+    <span className={`font-semibold ${error ? 'text-red-700' : 'text-slate-700'}`}>{label}</span>
+    <input
+      className={`${inputCls} ${error ? 'border-red-500 ring-2 ring-red-200 bg-red-50' : ''}`}
+      value={value}
+      onChange={e => set(e.target.value)}
+      list={list}
+      data-testid={testid}
+    />
+    {error && (
+      <span className="text-red-700 font-bold text-xs" data-testid={testid ? `${testid}-error` : undefined}>
+        {error}
+      </span>
+    )}
   </label>
 );
 
@@ -60,7 +71,12 @@ export const ReportsModal: React.FC<ReportsModalProps> = ({ records, utilityType
   const [selIds, setSelIds] = useState<string[]>([]);
   const selected = candidates.filter(c => c.kind === selKind && selIds.includes(c.stats.record.id));
 
-  const [para, setPara] = useState('');
+  const [para, setParaRaw] = useState('');
+  const [faltaPara, setFaltaPara] = useState(false);
+  const setPara = (v: string) => {
+    setParaRaw(v);
+    if (v.trim()) setFaltaPara(false);
+  };
   const [de, setDe] = useState('Unidad Facilidades de Mantenimiento');
   const [numero, setNumero] = useState(`FDM-XXXX-${year}`);
   const [fecha, setFecha] = useState(fechaLarga());
@@ -94,7 +110,7 @@ export const ReportsModal: React.FC<ReportsModalProps> = ({ records, utilityType
   const generateMemo = async () => {
     if (!selected.length || !selKind) return;
     if (!para.trim()) {
-      onShowToast?.('Falta el destinatario', 'Escriba o elija el área en el campo "A:".', 'warning');
+      setFaltaPara(true);
       return;
     }
     setBusy(true);
@@ -261,7 +277,7 @@ export const ReportsModal: React.FC<ReportsModalProps> = ({ records, utilityType
                     Memorando de {selKind === 'ahorro' ? 'RECONOCIMIENTO' : 'ADVERTENCIA'} – {selected.length} suministro(s). Si son de distintas áreas, haga un memorando por área.
                   </p>
                   <div className="grid md:grid-cols-2 gap-2">
-                    <Field label="A: (área; escriba o elija de la lista)" value={para} set={setPara} list="areas-memo" testid="rep-para" />
+                    <Field label="A: (área; escriba o elija de la lista)" value={para} set={setPara} list="areas-memo" testid="rep-para" error={faltaPara ? 'Falta el área: escriba a quién va dirigido el memorando (o elíjala de la lista) y vuelva a presionar "Generar".' : undefined} />
                     <Field label="De:" value={de} set={setDe} />
                     <Field label="N° de memorando" value={numero} set={setNumero} />
                     <Field label="Lugar y fecha" value={fecha} set={setFecha} />
