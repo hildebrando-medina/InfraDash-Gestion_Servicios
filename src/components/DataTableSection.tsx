@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { Eye, Edit2, Trash2, Search, Filter, AlertCircle, Plus, FileSpreadsheet, Calendar, Copy, X, Merge, ClipboardCheck, CheckCircle2, RotateCcw } from 'lucide-react';
+import { Eye, Edit2, Trash2, Search, Filter, AlertCircle, Plus, FileSpreadsheet, Calendar, Copy, X, Merge, ClipboardCheck, CheckCircle2, RotateCcw, FileText } from 'lucide-react';
+import { ReportsModal } from './ReportsModal';
+import { findCandidates, suggestedMonth, MES_TITULO } from '../reports';
 import { SupplyRecord, UtilityType, UserRole, FilterState } from '../types';
 import {
   MONTH_KEYS,
@@ -71,6 +73,12 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
   const reviewedCount = reviewedReports ? reviewedReports.reduce((n, r) => n + r.reviewed.length, 0) : 0;
   const [reasonsOpen, setReasonsOpen] = useState<string | null>(null); // aviso con la lista de motivos abierta
   const [showReviewed, setShowReviewed] = useState<boolean>(false);
+  const [showReports, setShowReports] = useState<boolean>(false);
+  // Aviso en el botón Reportes: ahorros y excesos significativos del último mes con recibos
+  const reportMonth = suggestedMonth(records, utilityType);
+  const reportCands = findCandidates(records, utilityType, reportMonth);
+  const nAhorro = reportCands.filter(c => c.kind === 'ahorro').length;
+  const nExceso = reportCands.filter(c => c.kind === 'exceso').length;
   const canMark = role === 'admin' && !!onMarkIssueReviewed;
 
   const unitLabel = utilityType === 'energy' ? 'kW-h' : 'm³';
@@ -263,6 +271,26 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
             <span>Revisar llenado</span>
           </button>
 
+          <button
+            onClick={() => setShowReports(true)}
+            className="px-3 py-2 border border-violet-300 bg-violet-50 hover:bg-violet-100 text-violet-800 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+            title={`Memorandos de reconocimiento o advertencia e informe general en Word. ${MES_TITULO[reportMonth]}: ${nAhorro} con ahorro y ${nExceso} con exceso significativo.`}
+            data-testid="btn-reportes"
+          >
+            <FileText className="w-4 h-4" />
+            <span>Reportes</span>
+            {nAhorro > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold" data-testid="badge-ahorro">
+                {nAhorro} ahorro
+              </span>
+            )}
+            {nExceso > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full bg-red-600 text-white text-[10px] font-bold animate-pulse" data-testid="badge-exceso">
+                {nExceso} exceso
+              </span>
+            )}
+          </button>
+
           {onOpenNewModal && role === 'admin' && (
             <button
               onClick={onOpenNewModal}
@@ -274,6 +302,10 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
           )}
         </div>
       </div>
+
+      {showReports && (
+        <ReportsModal records={records} utilityType={utilityType} onClose={() => setShowReports(false)} onShowToast={onShowToast} />
+      )}
 
       {activeReports && activeReports.length === 0 && (
         <div className="mb-4 bg-emerald-50 border border-emerald-300 rounded-xl p-4 text-xs text-emerald-900 flex items-start justify-between gap-3" data-testid="revisar-ok">
