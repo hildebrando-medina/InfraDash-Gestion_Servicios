@@ -5,10 +5,10 @@ import {
   BackupPayload,
   ConsultInfo,
   LAST_BACKUP_KEY,
-  REMINDER_DAYS,
+  LAST_SIG_KEY,
   ago,
   chooseFolder,
-  daysSince,
+  dataSignature,
   fmtDateTime,
   getSavedFolder,
   hasPermission,
@@ -38,6 +38,7 @@ type SaveState =
   | { kind: 'saving' }
   | { kind: 'error'; message: string }
   | { kind: 'blocked'; local: number; nube: number }
+  | { kind: 'stale'; nubeAt: string }
   | { kind: 'sin-datos' };
 
 const AUTO_DELAY_MS = 3000;
@@ -52,6 +53,8 @@ export function CloudBackupBar({ records, isSampleOnly, consultInfo, onImport, o
   const [preview, setPreview] = useState<BackupPayload | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Mensaje visible cuando la configuración no se completa (siempre se explica el motivo)
+  const [setupMsg, setSetupMsg] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const isConsult = !!consultInfo;
 
@@ -78,24 +81,38 @@ export function CloudBackupBar({ records, isSampleOnly, consultInfo, onImport, o
     }
     setSave({ kind: 'saving' });
     try {
-      const res = await writeBackup(handle, records, force);
+      const res = await writeBackup(handle, records, force, safeGet(LAST_BACKUP_KEY));
       if ('reason' in res) {
-        setSave({ kind: 'blocked', local: res.local, nube: res.nube });
+        if (res.reason === 'menos-datos') {
+          console.warn('[InfraDash nube] Respaldo NO hecho: la nube tiene', res.nube, 'suministros y este equipo', res.local);
+          setSave({ kind: 'blocked', local: res.local, nube: res.nube });
+        } else {
+          console.warn('[InfraDash nube] Respaldo NO hecho: la nube tiene datos más recientes de otro equipo/perfil:', res.nubeAt);
+          setSave({ kind: 'stale', nubeAt: res.nubeAt });
+        }
         return false;
       }
+      console.info('[InfraDash nube] Respaldo hecho:', res.at, '-', records.length, 'suministros');
       safeSet(LAST_BACKUP_KEY, res.at);
+      safeSet(LAST_SIG_KEY, dataSignature(records));
       setLastBackup(res.at);
       setSave({ kind: 'idle' });
       return true;
     } catch (e: any) {
+      console.error('[InfraDash nube] Error al escribir el respaldo:', e?.name, e?.message);
       setSave({ kind: 'error', message: e?.message || 'No se pudo escribir en la carpeta.' });
       return false;
     }
   };
 
-  // Respaldo AUTOMÁTICO: unos segundos después de cada cambio de datos
+  // Respaldo AUTOMÁTICO: unos segundos después de cada cambio de datos.
+  // Si los datos no cambiaron desde el último respaldo de este navegador, no se escribe nada
+  // (la nube ya está al día y no se arriesga a reemplazarla).
+  const sigNow = dataSignature(records);
+  const upToDate = !!lastBackup && safeGet(LAST_SIG_KEY) === sigNow;
   useEffect(() => {
     if (isConsult || !folder || !permitted) return;
+    if (safeGet(LAST_SIG_KEY) === dataSignature(records)) return;
     const t = setTimeout(() => {
       doBackup(false);
     }, AUTO_DELAY_MS);
@@ -105,6 +122,7 @@ export function CloudBackupBar({ records, isSampleOnly, consultInfo, onImport, o
 
   // ---------- Botones de respaldo ----------
   const handleSetup = async () => {
+    setSetupMsg(null);
     try {
       const h = await chooseFolder('readwrite');
       const name = String(h.name || '');
@@ -112,14 +130,29 @@ export function CloudBackupBar({ records, isSampleOnly, consultInfo, onImport, o
         const ok = confirm(
           `La carpeta elegida se llama "${name}".\nLa carpeta correcta es la de la nube: "GD Mantenimiento - INFRADASH_DATOS".\n\n¿Usar "${name}" de todos modos?`
         );
-        if (!ok) return;
+        if (!ok) {
+          setSetupMsg(`No se configuró: decidió no usar la carpeta "${name}".`);
+          return;
+        }
+      }
+      // Confirma que Chrome dio permiso para guardar en la carpeta
+      const allowed = await hasPermission(h, 'readwrite', true);
+      console.info('[InfraDash nube] Permiso para guardar en la carpeta:', allowed);
+      if (!allowed) {
+        setSetupMsg(`No se configuró: Chrome no dio permiso para guardar en "${name}". Presione de nuevo y acepte "Editar archivos".`);
+        return;
       }
       setFolder(h);
       setPermitted(true);
       const done = await doBackup(false, h);
       if (done) onShowToast('Respaldo activado', `Los datos se guardan solos en "${name}".`, 'success');
     } catch (e: any) {
-      if (e?.name !== 'AbortError') onShowToast('No se eligió la carpeta', e?.message || 'Intente de nuevo.', 'warning');
+      console.error('[InfraDash nube] No se configuró la carpeta:', e?.name, e?.message);
+      if (e?.name === 'AbortError') {
+        setSetupMsg('No se configuró: la ventana se cerró sin elegir carpeta (o se presionó Cancelar). Presione de nuevo "Respaldar en la nube".');
+      } else {
+        setSetupMsg(`No se configuró: ${e?.name || 'Error'} – ${e?.message || 'intente de nuevo'}.`);
+      }
     }
   };
 
@@ -142,11 +175,15 @@ export function CloudBackupBar({ records, isSampleOnly, consultInfo, onImport, o
   };
 
   const handleForce = async () => {
-    if (save.kind !== 'blocked') return;
+    if (save.kind !== 'blocked' && save.kind !== 'stale') return;
+    const first =
+      save.kind === 'blocked'
+        ? `La nube tiene ${save.nube} suministros y este equipo solo ${save.local}.\n\n`
+        : `La nube fue actualizada el ${fmtDateTime(save.nubeAt)} desde otro equipo o perfil, con datos distintos a los de este navegador.\n\n`;
     const ok = confirm(
-      `La nube tiene ${save.nube} suministros y este equipo solo ${save.local}.\n\n` +
-        'Si continúa, el respaldo de la nube se reemplazará con los datos de este equipo.\n' +
-        '(La copia del día queda en la carpeta "historial").\n\n¿Está seguro?'
+      first +
+        'Si continúa, el respaldo de la nube se reemplazará con los datos de este navegador.\n' +
+        '(La copia del día queda en la carpeta "historial").\n\nHágalo solo con autorización del administrador. ¿Está seguro?'
     );
     if (ok) await handleBackupNow(true);
   };
@@ -202,6 +239,11 @@ export function CloudBackupBar({ records, isSampleOnly, consultInfo, onImport, o
         'Solo use esta opción si ESTE equipo va a reemplazar a la computadora de registro (por ejemplo, la anterior se malogró).\n\n¿Continuar?'
       );
       if (!ok) return;
+      // Este navegador queda al día con la nube: así no se considera "atrasado" al respaldar
+      safeSet(LAST_BACKUP_KEY, preview.createdAt || new Date().toISOString());
+      safeSet(LAST_SIG_KEY, dataSignature(preview.records));
+      setLastBackup(preview.createdAt || new Date().toISOString());
+      setSave({ kind: 'idle' });
     }
     onImport(preview, mode);
     setImportOpen(false);
@@ -209,7 +251,6 @@ export function CloudBackupBar({ records, isSampleOnly, consultInfo, onImport, o
   };
 
   const local = summarize(records);
-  const overdue = daysSince(lastBackup) > REMINDER_DAYS;
 
   // ---------- Barra según el estado ----------
   let bar: React.ReactNode;
@@ -251,10 +292,24 @@ export function CloudBackupBar({ records, isSampleOnly, consultInfo, onImport, o
     );
   } else if (!folder) {
     bar = (
-      <div className="bg-amber-50 border border-amber-300 text-amber-900 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2" data-testid="nube-sin-configurar">
-        <span className="flex items-center gap-2">
-          <CloudOff className="w-4 h-4 shrink-0" /> <strong>Respaldo en la nube:</strong> no configurado en este equipo.
-        </span>
+      <div className="bg-red-50 border-2 border-red-400 text-red-900 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3" data-testid="nube-sin-configurar">
+        <div className="flex flex-col gap-1">
+          <span className="flex items-center gap-2 text-sm">
+            <CloudOff className="w-5 h-5 shrink-0" /> <strong>Respaldo en la nube: no configurado en este navegador.</strong>
+          </span>
+          <span data-testid="nube-aviso-navegador">
+            <strong>Si esta es la laptop de registro:</strong> probablemente abrió InfraDash en <strong>otro perfil de Chrome u otro navegador</strong>.{' '}
+            <strong>NO registre aquí</strong>: cierre esta ventana y abra InfraDash con el ícono <strong>INFRADASH REGISTRO</strong> del escritorio.
+          </span>
+          <span className="text-red-800">
+            Si es un equipo nuevo, o del administrador o del jefe: use <strong>"Actualizar desde la nube"</strong>.
+          </span>
+          {setupMsg && (
+            <span className="font-semibold text-red-700" data-testid="nube-setup-msg">
+              {setupMsg}
+            </span>
+          )}
+        </div>
         <div className="flex gap-2">
           <button onClick={handleSetup} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold flex items-center gap-1.5 cursor-pointer">
             <CloudUpload className="w-4 h-4" /> Respaldar en la nube
@@ -269,7 +324,7 @@ export function CloudBackupBar({ records, isSampleOnly, consultInfo, onImport, o
     bar = (
       <div className="bg-amber-50 border border-amber-300 text-amber-900 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2" data-testid="nube-activar">
         <span className="flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4 shrink-0" /> Para seguir respaldando en <strong>"{folder.name}"</strong>, presione <strong>Activar respaldo</strong> (y en la ventana de Chrome elija <strong>"Permitir en cada visita"</strong>). Último respaldo: {ago(lastBackup)}.
+          <AlertTriangle className="w-4 h-4 shrink-0" /> Para seguir respaldando en <strong>"{folder.name}"</strong>, presione <strong>Activar respaldo</strong> (y en la ventana de Chrome elija <strong>"Permitir en cada visita"</strong>). Último respaldo: {ago(lastBackup)}{upToDate ? ' — los datos están al día en la nube' : ''}.
         </span>
         <button onClick={handleActivate} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold flex items-center gap-1.5 cursor-pointer">
           <CloudUpload className="w-4 h-4" /> Activar respaldo
@@ -277,7 +332,7 @@ export function CloudBackupBar({ records, isSampleOnly, consultInfo, onImport, o
       </div>
     );
   } else {
-    const red = save.kind === 'error' || save.kind === 'blocked' || overdue;
+    const red = save.kind === 'error' || save.kind === 'blocked' || save.kind === 'stale';
     bar = (
       <div
         className={`${red ? 'bg-red-50 border-red-300 text-red-900' : 'bg-emerald-50 border-emerald-300 text-emerald-900'} border rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2`}
@@ -289,6 +344,7 @@ export function CloudBackupBar({ records, isSampleOnly, consultInfo, onImport, o
             <span>
               <strong>Respaldo automático activo</strong> en "{folder.name}" — último respaldo:{' '}
               <strong data-testid="nube-ultimo">{save.kind === 'saving' ? 'guardando…' : `${ago(lastBackup)} (${fmtDateTime(lastBackup)})`}</strong>
+              {upToDate && save.kind === 'idle' && <span data-testid="nube-al-dia"> — los datos están al día en la nube.</span>}
             </span>
           </span>
           {save.kind === 'error' && <span className="font-semibold">No se pudo respaldar: {save.message}</span>}
@@ -299,7 +355,13 @@ export function CloudBackupBar({ records, isSampleOnly, consultInfo, onImport, o
               <button onClick={handleForce} className="underline cursor-pointer">Respaldar de todos modos</button>
             </span>
           )}
-          {overdue && save.kind === 'idle' && <span className="font-semibold">Hace más de {REMINDER_DAYS} días que no se respalda. Presione "Respaldar ahora".</span>}
+          {save.kind === 'stale' && (
+            <span className="font-semibold" data-testid="nube-atrasado">
+              No se respaldó: la nube tiene datos guardados el {fmtDateTime(save.nubeAt)} desde otro equipo o perfil, distintos a los de este navegador. Si este no es el
+              navegador de registro, ciérrelo y abra InfraDash con el ícono INFRADASH REGISTRO. Avise al administrador.{' '}
+              <button onClick={handleForce} className="underline cursor-pointer">Respaldar de todos modos</button>
+            </span>
+          )}
         </div>
         <div className="flex gap-2 flex-wrap">
           <button onClick={() => handleBackupNow(false)} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold flex items-center gap-1.5 cursor-pointer">

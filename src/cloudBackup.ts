@@ -11,10 +11,10 @@ export const BACKUP_FILE = 'infradash-ultimo.json';
 export const CSV_FILE = 'infradash-datos.csv';
 export const HISTORY_DIR = 'historial';
 export const LAST_BACKUP_KEY = 'infradash_ultimo_respaldo';
+// "Huella" de los datos que se respaldaron por última vez desde ESTE navegador
+export const LAST_SIG_KEY = 'infradash_firma_respaldo';
 export const CONSULT_MODE_KEY = 'infradash_modo_consulta';
 export const SAFETY_COPY_KEY = 'infradash_copia_antes_de_importar';
-// Días sin respaldo antes de mostrar el recordatorio
-export const REMINDER_DAYS = 2;
 
 const DB_NAME = 'infradash_nube';
 const DB_STORE = 'carpeta';
@@ -68,8 +68,15 @@ export const forgetFolder = async () => idb('readwrite', s => s.delete(DB_KEY));
 
 // Abre la ventana de Windows para elegir la carpeta (una sola vez)
 export const chooseFolder = async (mode: 'read' | 'readwrite'): Promise<any> => {
+  console.info('[InfraDash nube] Abriendo ventana para elegir carpeta (' + mode + ')…');
   const handle = await (window as any).showDirectoryPicker({ id: 'infradash-nube', mode });
-  await saveFolder(handle);
+  console.info('[InfraDash nube] Carpeta elegida:', handle && handle.name);
+  try {
+    await saveFolder(handle);
+  } catch (e) {
+    // Si no se puede recordar, se usa igual en esta sesión
+    console.warn('[InfraDash nube] No se pudo recordar la carpeta para la próxima vez:', e);
+  }
   return handle;
 };
 
@@ -130,6 +137,18 @@ export const buildCsv = (records: SupplyRecord[]): string => {
   return '﻿' + rows.join('\r\n');
 };
 
+// Huella corta de los datos: cambia si cambia cualquier dato
+export const dataSignature = (records: SupplyRecord[]): string => {
+  const text = JSON.stringify(records);
+  let h1 = 5381, h2 = 52711;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    h1 = (h1 * 33) ^ c;
+    h2 = (h2 * 33) ^ c;
+  }
+  return `${records.length}-${text.length}-${(h1 >>> 0).toString(36)}${(h2 >>> 0).toString(36)}`;
+};
+
 const pad = (n: number) => String(n).padStart(2, '0');
 export const dayStamp = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 export const minuteStamp = (d = new Date()) => `${dayStamp(d)}-${pad(d.getHours())}${pad(d.getMinutes())}`;
@@ -180,16 +199,26 @@ export const readBackupFromFile = async (file: File): Promise<BackupPayload> => 
 
 export type WriteResult =
   | { ok: true; at: string }
-  | { ok: false; reason: 'menos-datos'; local: number; nube: number };
+  | { ok: false; reason: 'menos-datos'; local: number; nube: number }
+  | { ok: false; reason: 'nube-mas-reciente'; nubeAt: string };
 
-// Escribe el respaldo. Por seguridad NO reemplaza un respaldo de la nube
-// que tenga muchos más suministros que este equipo (salvo force=true).
-export const writeBackup = async (dir: any, records: SupplyRecord[], force = false): Promise<WriteResult> => {
+// Escribe el respaldo. Por seguridad NO reemplaza la nube (salvo force=true) si:
+//  - la nube tiene muchos más suministros que este equipo, o
+//  - la nube fue actualizada DESPUÉS del último respaldo de este navegador con datos distintos
+//    (otro equipo, otro perfil de Chrome u otro navegador): este navegador tiene datos atrasados.
+// lastLocal = fecha del último respaldo hecho desde este navegador (null si nunca respaldó).
+export const writeBackup = async (dir: any, records: SupplyRecord[], force = false, lastLocal: string | null = null): Promise<WriteResult> => {
   if (!force) {
     try {
       const current = await readBackupFromFolder(dir);
       if (current && current.totalRecords >= 4 && records.length < current.totalRecords * 0.5) {
         return { ok: false, reason: 'menos-datos', local: records.length, nube: current.totalRecords };
+      }
+      if (current && dataSignature(current.records) !== dataSignature(records)) {
+        const nubeT = new Date(current.createdAt).getTime();
+        const localT = lastLocal ? new Date(lastLocal).getTime() : NaN;
+        const cloudIsNewer = !isNaN(nubeT) && (isNaN(localT) || nubeT > localT + 1000);
+        if (cloudIsNewer) return { ok: false, reason: 'nube-mas-reciente', nubeAt: current.createdAt };
       }
     } catch {
       // Si el archivo de la nube está dañado, se reemplaza con los datos buenos de este equipo

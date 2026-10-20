@@ -219,7 +219,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="font-bold text-base text-[#191c1e]">Control de Suministros y Servicios (Infradash)</h1>
-              <p className="text-xs text-[#434655]">Gestión y Facturación de Viviendas - Punta Arenas / Talara</p>
+              <p className="text-xs text-[#434655]">Gestión y Facturación de Predios Petroperú S.A.</p>
             </div>
           </div>
 
