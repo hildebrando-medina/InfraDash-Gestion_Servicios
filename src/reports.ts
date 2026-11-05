@@ -139,6 +139,195 @@ export const suggestedMonth = (records: SupplyRecord[], utilityType?: UtilityTyp
   return MONTH_KEYS[0];
 };
 
+// ---------------- Análisis de un suministro (cualquiera, aunque no sea significativo) ----------------
+export type Nivel = 'alto' | 'bajo' | 'normal';
+
+export interface AnalisisMes {
+  month: MonthKey;
+  hasReceipt: boolean;
+  consumption: number;
+  amount: number;
+  unitCost: number | null; // S/ por kW-h o m³ (solo si hay consumo)
+  varPrevAmountPct: number | null; // % del monto frente al mes anterior con recibo
+  nivel: Nivel | null; // frente al promedio de consumo (o monto) de los meses con datos
+}
+
+export interface AnalisisSuministro {
+  stats: SupplyMonthStats;
+  utilityType: UtilityType;
+  year: number;
+  months: AnalisisMes[]; // enero .. mes analizado
+  usaConsumo: boolean; // true si hay consumo suficiente para comparar por consumo; si no, por monto
+  avgAllConsumption: number; // promedio de los meses con datos hasta el mes (incluido)
+  avgAllAmount: number;
+  maxMes: AnalisisMes | null;
+  minMes: AnalisisMes | null;
+  unitCostMes: number | null;
+  unitCostPrev: number | null;
+  unitCostAvg: number | null;
+  prevYear: { consumption: number; amount: number } | null; // mismo mes del año anterior
+  last3Avg: number | null; // promedio (consumo o monto) de los 3 últimos meses con datos, incluido el mes
+  beforeLast3Avg: number | null; // promedio de los meses anteriores a esos 3
+  lecturaNoEncadena: { prevMonth: MonthKey; prevCurr: number; thisPrev: number } | null;
+  vsPrev: { dCons: number; pCons: number | null; dAmt: number; pAmt: number | null } | null;
+  vsAvg: { dCons: number; pCons: number | null; dAmt: number; pAmt: number | null } | null;
+  veredicto: 'exceso' | 'ahorro' | 'normal' | 'sin-historia';
+  prevNivel: Nivel | null; // cómo fue el mes anterior frente al promedio
+  avisosLlenado: { message: string; reviewed: boolean; reason?: string }[]; // de "Revisar llenado" para este suministro
+}
+
+const pctOf = (to: number, from: number) => (from > 0 ? ((to - from) / from) * 100 : null);
+
+// Años disponibles para un servicio (el más reciente primero)
+export const yearsOf = (records: SupplyRecord[], utilityType: UtilityType): number[] =>
+  Array.from(new Set(records.filter(r => r.utilityType === utilityType).map(r => Number(r.year) || 0).filter(y => y > 0))).sort((a, b) => b - a);
+
+// Último mes con recibo de un suministro (para proponerlo)
+export const lastMonthWithReceipt = (record: SupplyRecord): MonthKey | null => {
+  const det = buildMonthlyDetailsForForm(record);
+  for (let i = 11; i >= 0; i--) if (hasReceipt(det[MONTH_KEYS[i]])) return MONTH_KEYS[i];
+  return null;
+};
+
+export const monthHasReceipt = (record: SupplyRecord, month: MonthKey) => hasReceipt(buildMonthlyDetailsForForm(record)[month]);
+
+export const analyzeSupply = (records: SupplyRecord[], record: SupplyRecord, month: MonthKey, pct = DEFAULT_PCT, minSoles = DEFAULT_MIN_SOLES): AnalisisSuministro => {
+  const stats = supplyMonthStats(record, month);
+  const det = buildMonthlyDetailsForForm(record);
+  const idx = MONTH_KEYS.indexOf(month);
+  const year = Number(record.year) || new Date().getFullYear();
+
+  const conDatos = stats.series.filter(s => s.hasReceipt);
+  const conConsumo = conDatos.filter(s => s.consumption > 0);
+  // Se compara por consumo si al menos 3 meses tienen consumo (y el mes analizado también); si no, por monto.
+  const usaConsumo = conConsumo.length >= 3 && stats.consumption > 0;
+  const base = usaConsumo ? conConsumo : conDatos;
+  const val = (s: { consumption: number; amount: number }) => (usaConsumo ? s.consumption : s.amount);
+  const avgAll = base.length ? base.reduce((a, s) => a + val(s), 0) / base.length : 0;
+  const avgAllC = base.length ? base.reduce((a, s) => a + s.consumption, 0) / base.length : 0;
+  const avgAllA = base.length ? base.reduce((a, s) => a + s.amount, 0) / base.length : 0;
+
+  const nivelDe = (s: { consumption: number; amount: number; hasReceipt: boolean }): Nivel | null => {
+    if (!s.hasReceipt || avgAll <= 0) return null;
+    if (usaConsumo && s.consumption <= 0) return null;
+    const p = ((val(s) - avgAll) / avgAll) * 100;
+    return p >= pct ? 'alto' : p <= -pct ? 'bajo' : 'normal';
+  };
+
+  let prevAmt: number | null = null;
+  const months: AnalisisMes[] = stats.series.map(s => {
+    const m: AnalisisMes = {
+      month: s.month,
+      hasReceipt: s.hasReceipt,
+      consumption: s.consumption,
+      amount: s.amount,
+      unitCost: s.consumption > 0 && s.amount > 0 ? s.amount / s.consumption : null,
+      varPrevAmountPct: s.hasReceipt && prevAmt !== null ? pctOf(s.amount, prevAmt) : null,
+      nivel: nivelDe(s)
+    };
+    if (s.hasReceipt) prevAmt = s.amount;
+    return m;
+  });
+
+  const comparables = months.filter(m => m.hasReceipt && (!usaConsumo || m.consumption > 0));
+  const maxMes = comparables.length ? comparables.reduce((a, b) => (val(b) > val(a) ? b : a)) : null;
+  const minMes = comparables.length ? comparables.reduce((a, b) => (val(b) < val(a) ? b : a)) : null;
+
+  // Costo por unidad
+  const unitCostMes = stats.consumption > 0 && stats.amount > 0 ? stats.amount / stats.consumption : null;
+  const unitCostPrev = stats.prevConsumption > 0 && stats.prevAmount > 0 ? stats.prevAmount / stats.prevConsumption : null;
+  const antConsumo = stats.series.slice(0, idx).filter(s => s.hasReceipt && s.consumption > 0 && s.amount > 0);
+  const sumA = antConsumo.reduce((a, s) => a + s.amount, 0);
+  const sumC = antConsumo.reduce((a, s) => a + s.consumption, 0);
+  const unitCostAvg = sumC > 0 ? sumA / sumC : null;
+
+  // Mismo mes del año anterior (si existe el suministro registrado en ese año)
+  const prevRec = records.find(
+    r => r.utilityType === record.utilityType && String(r.supplyNumber).trim() === String(record.supplyNumber).trim() && Number(r.year) === year - 1
+  );
+  let prevYear: AnalisisSuministro['prevYear'] = null;
+  if (prevRec) {
+    const pd = buildMonthlyDetailsForForm(prevRec)[month];
+    if (hasReceipt(pd)) prevYear = { consumption: Number(pd.consumption) || 0, amount: Number(pd.amount) || 0 };
+  }
+
+  // Tendencia: 3 últimos meses con datos frente a los anteriores
+  let last3Avg: number | null = null;
+  let beforeLast3Avg: number | null = null;
+  if (comparables.length >= 5) {
+    const l3 = comparables.slice(-3);
+    const rest = comparables.slice(0, -3);
+    last3Avg = l3.reduce((a, m) => a + val(m), 0) / 3;
+    beforeLast3Avg = rest.reduce((a, m) => a + val(m), 0) / rest.length;
+  }
+
+  // ¿La lectura anterior del mes coincide con la lectura actual del mes anterior?
+  let lecturaNoEncadena: AnalisisSuministro['lecturaNoEncadena'] = null;
+  if (stats.prevMonth) {
+    const pc = Number(det[stats.prevMonth].currentReading) || 0;
+    const tp = Number(det[month].previousReading) || 0;
+    if (pc > 0 && tp > 0 && Math.abs(pc - tp) > 0.001) lecturaNoEncadena = { prevMonth: stats.prevMonth, prevCurr: pc, thisPrev: tp };
+  }
+
+  const vsPrev = stats.prevMonth
+    ? {
+        dCons: stats.consumption - stats.prevConsumption,
+        pCons: pctOf(stats.consumption, stats.prevConsumption),
+        dAmt: stats.amount - stats.prevAmount,
+        pAmt: pctOf(stats.amount, stats.prevAmount)
+      }
+    : null;
+  const vsAvg =
+    stats.monthsInAvg > 0
+      ? {
+          dCons: stats.consumption - stats.avgConsumption,
+          pCons: pctOf(stats.consumption, stats.avgConsumption),
+          dAmt: stats.amount - stats.avgAmount,
+          pAmt: pctOf(stats.amount, stats.avgAmount)
+        }
+      : null;
+
+  // Mismo criterio que los memorandos (monto frente al promedio de los meses anteriores)
+  let veredicto: AnalisisSuministro['veredicto'] = 'sin-historia';
+  if (stats.monthsInAvg >= 2 && stats.avgAmount > 0 && vsAvg) {
+    const p = Math.abs(vsAvg.pAmt || 0);
+    const s = Math.abs(vsAvg.dAmt);
+    veredicto = p >= pct && s >= minSoles ? (vsAvg.dAmt > 0 ? 'exceso' : 'ahorro') : 'normal';
+  }
+  const prevMes = stats.prevMonth ? months.find(m => m.month === stats.prevMonth) || null : null;
+  const rep = findFillingIssues(records, record.utilityType).find(x => x.record.id === record.id);
+  const avisosLlenado = rep
+    ? [
+        ...rep.issues.map(i => ({ message: i.message, reviewed: false })),
+        ...rep.reviewed.map(i => ({ message: i.message, reviewed: true, reason: i.reviewed?.reason }))
+      ]
+    : [];
+
+  return {
+    stats,
+    utilityType: record.utilityType,
+    year,
+    months,
+    usaConsumo,
+    avgAllConsumption: avgAllC,
+    avgAllAmount: avgAllA,
+    maxMes,
+    minMes,
+    unitCostMes,
+    unitCostPrev,
+    unitCostAvg,
+    prevYear,
+    last3Avg,
+    beforeLast3Avg,
+    lecturaNoEncadena,
+    vsPrev,
+    vsAvg,
+    veredicto,
+    prevNivel: prevMes ? prevMes.nivel : null,
+    avisosLlenado
+  };
+};
+
 // ---------------- Informe general ----------------
 export type ReportPeriod = { type: 'mensual' | 'semestral' | 'anual'; index: number }; // mes 0-11 / semestre 0-1
 

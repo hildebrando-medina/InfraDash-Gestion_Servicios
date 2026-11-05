@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { FileText, X, Award, AlertTriangle, FileBarChart, Loader2 } from 'lucide-react';
+import { FileText, X, Award, AlertTriangle, FileBarChart, Loader2, Search } from 'lucide-react';
 import { SupplyRecord, UtilityType } from '../types';
 import { MONTH_KEYS, MonthKey } from '../recordUtils';
 import {
@@ -11,6 +11,7 @@ import {
   MES_NOMBRE,
   MES_TITULO,
   ReportPeriod,
+  analyzeSupply,
   buildServiceSection,
   fechaLarga,
   findCandidates,
@@ -18,12 +19,15 @@ import {
   fmtPct,
   fmtSol,
   getSavedArea,
+  lastMonthWithReceipt,
+  monthHasReceipt,
   periodLabel,
   saveArea,
   serviceOf,
   serviceTitle,
   suggestedMonth,
-  unitOf
+  unitOf,
+  yearsOf
 } from '../reports';
 
 interface ReportsModalProps {
@@ -55,7 +59,7 @@ const Field = ({ label, value, set, list, testid, error }: { label: string; valu
 );
 
 export const ReportsModal: React.FC<ReportsModalProps> = ({ records, utilityType, onClose, onShowToast }) => {
-  const [tab, setTab] = useState<'memo' | 'informe'>('memo');
+  const [tab, setTab] = useState<'memo' | 'analisis' | 'informe'>('memo');
   const unit = unitOf(utilityType);
   const year = records.find(r => r.year)?.year || new Date().getFullYear();
   const [busy, setBusy] = useState(false);
@@ -185,6 +189,84 @@ export const ReportsModal: React.FC<ReportsModalProps> = ({ records, utilityType
     }
   };
 
+  // ---------- Analizar un suministro ----------
+  const aYears = useMemo(() => yearsOf(records, utilityType), [records, utilityType]);
+  const [aYear, setAYear] = useState<number>(() => aYears[0] || year);
+  const aList = useMemo(
+    () =>
+      records
+        .filter(r => r.utilityType === utilityType && (Number(r.year) || 0) === aYear)
+        .sort((x, y) => String(x.supplyNumber).localeCompare(String(y.supplyNumber))),
+    [records, utilityType, aYear]
+  );
+  const optLabel = (r: SupplyRecord) => `${r.supplyNumber} — ${r.propertyName || r.address || ''}`.trim();
+  const [aText, setAText] = useState('');
+  const [aRecId, setARecId] = useState<string | null>(null);
+  const [aMonth, setAMonth] = useState<MonthKey>(() => suggestedMonth(records, utilityType));
+  const [faltaSum, setFaltaSum] = useState(false);
+  const aRec = aList.find(r => r.id === aRecId) || null;
+  const pickText = (v: string) => {
+    setAText(v);
+    const t = v.trim().toLowerCase();
+    const found =
+      aList.find(r => optLabel(r).toLowerCase() === t) || aList.find(r => String(r.supplyNumber).trim().toLowerCase() === t) || null;
+    setARecId(found ? found.id : null);
+    if (found) {
+      setFaltaSum(false);
+      const lm = lastMonthWithReceipt(found);
+      if (lm) setAMonth(lm);
+    }
+  };
+  const aOk = !!aRec && monthHasReceipt(aRec, aMonth);
+  const analisis = useMemo(() => (aRec && aOk ? analyzeSupply(records, aRec, aMonth) : null), [records, aRec, aMonth, aOk]);
+  const [aPara, setAPara] = useState('Unidad Facilidades de Mantenimiento – Jorge Luis Wiesse Lopez, Jefe');
+  const [aDe, setADe] = useState('Coordinación de Mantenimiento No Industrial');
+  const [aNumero, setANumero] = useState(`FDM-XXXX-${year}`);
+  const [aFecha, setAFecha] = useState(fechaLarga());
+  const [aFirmaNombre, setAFirmaNombre] = useState('Miguel Martin Machare Murillo');
+  const [aFirmaCargo, setAFirmaCargo] = useState('Coordinador');
+  const [aFirmaUnidad, setAFirmaUnidad] = useState('Mantenimiento No Industrial');
+  const [aIniciales, setAIniciales] = useState('');
+  const aAsuntoAuto = aRec
+    ? `Análisis del consumo de ${serviceOf(utilityType)} – ${aRec.propertyName || aRec.supplyNumber} (suministro ${aRec.supplyNumber}), ${MES_NOMBRE[aMonth]} ${aYear}`
+    : '';
+  const [aAsuntoEdit, setAAsuntoEdit] = useState<string | null>(null);
+  const aAsunto = aAsuntoEdit ?? aAsuntoAuto;
+
+  const generateAnalisis = async () => {
+    if (!aRec) {
+      setFaltaSum(true);
+      return;
+    }
+    if (!analisis) return;
+    setBusy(true);
+    try {
+      const mod = await import('../reportDocx');
+      const blob = await mod.buildAnalisis(analisis, {
+        docType: 'INFORME',
+        numero: aNumero,
+        para: aPara,
+        de: aDe,
+        fecha: aFecha,
+        asunto: aAsunto,
+        firmaNombre: aFirmaNombre,
+        firmaCargo: aFirmaCargo,
+        firmaUnidad: aFirmaUnidad,
+        iniciales: aIniciales
+      });
+      const name = `Analisis_${utilityType === 'energy' ? 'Energia' : 'Agua'}_${aRec.supplyNumber}_${MES_TITULO[aMonth]}${aYear}.docx`;
+      mod.downloadBlob(blob, name);
+      onShowToast?.('Análisis generado', `Se descargó "${name}". Ábralo en Word, ponga el N° y revíselo antes de firmar.`, 'success');
+    } catch (e: any) {
+      console.error('[InfraDash reportes]', e);
+      onShowToast?.('No se pudo generar', e?.message || 'Intente de nuevo.', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const pctS = (p: number | null | undefined) => (p === null || p === undefined ? '—' : `${p >= 0 ? '+' : '–'} ${fmtPct(Math.abs(p))}`);
+  const solS = (v: number) => `${v >= 0 ? '+' : '–'} ${fmtSol(Math.abs(v))}`;
+
   const renderCard = (c: Candidate) => {
     const on = selKind === c.kind && selIds.includes(c.stats.record.id);
     const good = c.kind === 'ahorro';
@@ -226,6 +308,13 @@ export const ReportsModal: React.FC<ReportsModalProps> = ({ records, utilityType
             className={`flex-1 px-4 py-2.5 font-semibold flex items-center justify-center gap-1.5 cursor-pointer ${tab === 'memo' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-slate-600'}`}
           >
             <Award className="w-4 h-4" /> Memorando: ahorro o exceso
+          </button>
+          <button
+            onClick={() => setTab('analisis')}
+            data-testid="tab-analisis"
+            className={`flex-1 px-4 py-2.5 font-semibold flex items-center justify-center gap-1.5 cursor-pointer ${tab === 'analisis' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-slate-600'}`}
+          >
+            <Search className="w-4 h-4" /> Analizar un suministro
           </button>
           <button
             onClick={() => setTab('informe')}
@@ -304,6 +393,132 @@ export const ReportsModal: React.FC<ReportsModalProps> = ({ records, utilityType
                   </button>
                 </div>
               )}
+            </>
+          )}
+
+          {tab === 'analisis' && (
+            <>
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+                Elija <strong>cualquier suministro</strong>, el <strong>mes</strong> y el <strong>año</strong>, aunque no aparezca como ahorro o exceso. Sale un informe en Word que
+                explica la <strong>subida o bajada frente al mes anterior</strong>, la compara con el <strong>promedio</strong> y con los meses más alto y más bajo, muestra la
+                historia del año con gráfico, verifica el registro y da recomendaciones.
+              </div>
+              <div className="flex flex-wrap items-end gap-3 bg-slate-50 border border-slate-200 rounded-xl p-3">
+                <label className="flex flex-col gap-0.5 flex-1 min-w-[260px]">
+                  <span className={`font-semibold ${faltaSum ? 'text-red-700' : ''}`}>Suministro (escriba el N° o el nombre y elíjalo de la lista)</span>
+                  <input
+                    className={`${inputCls} ${faltaSum ? 'border-red-500 ring-2 ring-red-200 bg-red-50' : ''}`}
+                    value={aText}
+                    onChange={e => pickText(e.target.value)}
+                    list="sum-analisis"
+                    placeholder="Ej.: 71155141"
+                    data-testid="an-sum"
+                  />
+                  <datalist id="sum-analisis">
+                    {aList.map(r => (
+                      <option key={r.id} value={optLabel(r)} />
+                    ))}
+                  </datalist>
+                  {faltaSum && (
+                    <span className="text-red-700 font-bold" data-testid="an-sum-error">
+                      Falta el suministro: escriba el N° y elíjalo de la lista.
+                    </span>
+                  )}
+                </label>
+                <label className="flex flex-col gap-0.5">
+                  <span className="font-semibold">Mes</span>
+                  <select className={baseInput + ' w-36'} value={aMonth} onChange={e => setAMonth(e.target.value as MonthKey)} data-testid="an-mes">
+                    {MONTH_KEYS.map(m => (
+                      <option key={m} value={m}>{MES_TITULO[m]}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-0.5">
+                  <span className="font-semibold">Año</span>
+                  <select
+                    className={baseInput + ' w-24'}
+                    value={aYear}
+                    onChange={e => {
+                      setAYear(Number(e.target.value));
+                      setARecId(null);
+                      setAText('');
+                    }}
+                    data-testid="an-anio"
+                  >
+                    {(aYears.length ? aYears : [year]).map(y => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              {aRec && !aOk && (
+                <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 font-semibold text-amber-800" data-testid="an-sin-recibo">
+                  {aRec.supplyNumber} no tiene recibo registrado en {MES_NOMBRE[aMonth]} de {aYear}. Elija otro mes.
+                </div>
+              )}
+
+              {analisis && (
+                <div
+                  className={`rounded-xl p-3 border ${analisis.veredicto === 'exceso' ? 'bg-red-50 border-red-300' : analisis.veredicto === 'ahorro' ? 'bg-emerald-50 border-emerald-300' : 'bg-white border-slate-300'}`}
+                  data-testid="an-resumen"
+                >
+                  <p className="font-bold text-sm mb-1">
+                    {aRec?.supplyNumber} — {aRec?.propertyName} · {MES_TITULO[aMonth]} {aYear}: {fmtSol(analisis.stats.amount)} ({fmtNum(analisis.stats.consumption)} {unit})
+                  </p>
+                  {analisis.vsPrev && analisis.stats.prevMonth && (
+                    <p>
+                      Frente a <strong>{MES_NOMBRE[analisis.stats.prevMonth]}</strong> ({fmtSol(analisis.stats.prevAmount)}, {fmtNum(analisis.stats.prevConsumption)} {unit}): monto{' '}
+                      <strong>{solS(analisis.vsPrev.dAmt)} ({pctS(analisis.vsPrev.pAmt)})</strong> · consumo {pctS(analisis.vsPrev.pCons)}
+                    </p>
+                  )}
+                  {analisis.vsAvg && analisis.stats.monthsInAvg > 0 && (
+                    <p>
+                      Frente al <strong>promedio</strong> de {analisis.stats.monthsInAvg} meses anteriores ({fmtSol(analisis.stats.avgAmount)}, {fmtNum(analisis.stats.avgConsumption)} {unit}): monto{' '}
+                      <strong>{solS(analisis.vsAvg.dAmt)} ({pctS(analisis.vsAvg.pAmt)})</strong> · consumo {pctS(analisis.vsAvg.pCons)}
+                    </p>
+                  )}
+                  {analisis.prevNivel === 'bajo' && analisis.stats.prevMonth && (
+                    <p className="text-slate-700">{MES_TITULO[analisis.stats.prevMonth]} fue un mes <strong>bajo</strong> para este predio.</p>
+                  )}
+                  <p className={`font-bold mt-1 ${analisis.veredicto === 'exceso' ? 'text-red-700' : analisis.veredicto === 'ahorro' ? 'text-emerald-700' : 'text-blue-800'}`} data-testid="an-veredicto">
+                    {analisis.veredicto === 'exceso'
+                      ? 'Resultado: POR ENCIMA de lo habitual (exceso significativo).'
+                      : analisis.veredicto === 'ahorro'
+                        ? 'Resultado: POR DEBAJO de lo habitual (ahorro significativo).'
+                        : analisis.veredicto === 'normal'
+                          ? 'Resultado: DENTRO de lo habitual para este predio.'
+                          : 'Resultado: faltan meses anteriores para comparar.'}
+                  </p>
+                </div>
+              )}
+
+              <div className="grid md:grid-cols-2 gap-2">
+                <Field label="A:" value={aPara} set={setAPara} list="areas-memo" />
+                <Field label="De:" value={aDe} set={setADe} />
+                <Field label="N° de informe" value={aNumero} set={setANumero} />
+                <Field label="Lugar y fecha" value={aFecha} set={setAFecha} />
+              </div>
+              <label className="flex flex-col gap-0.5">
+                <span className="font-semibold text-slate-700">Asunto</span>
+                <input className={inputCls} value={aAsunto} onChange={e => setAAsuntoEdit(e.target.value)} />
+              </label>
+              <div className="grid md:grid-cols-4 gap-2">
+                <Field label="Firma: nombre" value={aFirmaNombre} set={setAFirmaNombre} />
+                <Field label="Cargo" value={aFirmaCargo} set={setAFirmaCargo} />
+                <Field label="Unidad" value={aFirmaUnidad} set={setAFirmaUnidad} />
+                <Field label="Iniciales" value={aIniciales} set={setAIniciales} />
+              </div>
+              <datalist id="areas-memo">
+                {AREAS_SUGERIDAS.map(a => <option key={a} value={a} />)}
+              </datalist>
+              <button
+                onClick={generateAnalisis}
+                disabled={busy || (!!aRec && !aOk)}
+                className="self-end px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center gap-2 cursor-pointer disabled:opacity-60"
+              >
+                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />} Generar análisis (Word)
+              </button>
             </>
           )}
 

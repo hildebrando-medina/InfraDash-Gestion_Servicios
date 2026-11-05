@@ -17,9 +17,13 @@ import {
   WidthType
 } from 'docx';
 import { UtilityType } from './types';
-import { MONTH_KEYS, MONTH_LABELS } from './recordUtils';
+import { MONTH_KEYS, MONTH_LABELS, MonthKey } from './recordUtils';
 import {
+  AnalisisSuministro,
   Candidate,
+  DEFAULT_MIN_SOLES,
+  DEFAULT_PCT,
+  Nivel,
   MES_NOMBRE,
   MES_TITULO,
   ReportPeriod,
@@ -558,6 +562,311 @@ export const buildInforme = async (p: ReportPeriod, year: number, sections: Serv
   concl.forEach(t => c.push(BL(t)));
   c.push(E(120));
   c.push(...closing(h, []));
+  return buildDoc(c, h.asunto);
+};
+
+// ============================================================
+// ANÁLISIS DE UN SUMINISTRO (cualquier suministro y mes, aunque no sea "significativo")
+// ============================================================
+const BOX = (title: string, lines: string[], fill = 'EFF6FF', color = '1F3A8A') => {
+  const b = { style: BorderStyle.SINGLE, size: 6, color };
+  return new Table({
+    width: { size: W, type: WidthType.DXA },
+    columnWidths: [W],
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            width: { size: W, type: WidthType.DXA },
+            borders: { top: b, bottom: b, left: b, right: b },
+            shading: { fill, type: ShadingType.CLEAR, color: 'auto' },
+            margins: { top: 100, bottom: 100, left: 140, right: 140 },
+            children: [
+              new Paragraph({ spacing: { after: 60 }, children: [r(title, { b: true, color })] }),
+              ...lines.map(
+                t =>
+                  new Paragraph({
+                    numbering: { reference: 'b', level: 0 },
+                    alignment: AlignmentType.JUSTIFIED,
+                    spacing: { after: 60, line: 259 },
+                    children: runs(t)
+                  })
+              )
+            ]
+          })
+        ]
+      })
+    ]
+  });
+};
+
+export const buildAnalisis = async (a: AnalisisSuministro, h: HeaderData): Promise<Blob> => {
+  const s = a.stats;
+  const u = a.utilityType;
+  const unit = unitOf(u);
+  const serv = serviceOf(u);
+  const isWater = u === 'water';
+  const mes = MES_NOMBRE[s.month];
+  const Mes = MES_TITULO[s.month];
+  const year = a.year;
+  const mIdx = MONTH_KEYS.indexOf(s.month);
+  const predio = s.record.propertyName || s.record.address || `Suministro ${s.record.supplyNumber}`;
+  const prevName = s.prevMonth ? MES_NOMBRE[s.prevMonth] : '';
+  const c: (Paragraph | Table)[] = [...headerBlock(h)];
+  const dir = (v: number) => (v > 0 ? 'subió' : v < 0 ? 'bajó' : 'se mantuvo');
+  const pctS = (p: number | null) => (p === null ? '—' : `${p >= 0 ? '+' : '–'} ${fmtPct(Math.abs(p))}`);
+  const cons = (v: number, d = 0) => `${fmtNum(v, d)} ${unit}`;
+  const nivelTxt = (n: Nivel | null) => (n === 'alto' ? '**Alto**' : n === 'bajo' ? '**Bajo**' : n === 'normal' ? 'Normal' : '—');
+  const cmpTxt = a.usaConsumo ? 'consumo' : 'monto';
+
+  // Introducción
+  const mov = a.vsPrev ? (a.usaConsumo ? a.vsPrev.dCons : a.vsPrev.dAmt) : 0;
+  c.push(
+    P(
+      `Por medio del presente, se remite el **análisis del consumo de ${serv}** del predio **${predio}** (suministro ${s.record.supplyNumber}), correspondiente a **${mes} de ${year}**, elaborado con la información registrada en **InfraDash** a partir de los recibos del suministro. El análisis explica ${a.vsPrev ? `por qué el consumo **${dir(mov)}** frente a ${prevName}` : 'el consumo del mes'} y lo compara con el comportamiento histórico del predio durante el año.`
+    )
+  );
+
+  // En pocas palabras
+  const resumen: string[] = [];
+  if (a.vsPrev) {
+    resumen.push(
+      `Frente a **${prevName}**: el consumo ${a.vsPrev.dCons === 0 ? `se mantuvo en ${cons(s.consumption)}` : `${dir(a.vsPrev.dCons)} de ${cons(s.prevConsumption)} a ${cons(s.consumption)} (${pctS(a.vsPrev.pCons)})`} y el monto ${a.vsPrev.dAmt === 0 ? `se mantuvo en **${fmtSol(s.amount)}**` : `${dir(a.vsPrev.dAmt)} de ${fmtSol(s.prevAmount)} a **${fmtSol(s.amount)}** (${signed(a.vsPrev.dAmt, fmtSol)}, ${pctS(a.vsPrev.pAmt)})`}.`
+    );
+  } else resumen.push(`No hay un mes anterior con recibo para comparar.`);
+  if (a.vsAvg && s.monthsInAvg > 0) {
+    resumen.push(
+      `Frente al **promedio de los ${s.monthsInAvg} meses anteriores** (${cons(s.avgConsumption, 1)} y ${fmtSol(s.avgAmount)}): consumo ${pctS(a.vsAvg.pCons)} y monto ${pctS(a.vsAvg.pAmt)} (${signed(a.vsAvg.dAmt, fmtSol)}).`
+    );
+  }
+  if (a.prevNivel === 'bajo' && mov > 0) resumen.push(`**${MES_TITULO[s.prevMonth as MonthKey]} fue un mes bajo** para este predio; por eso la subida de ${mes} se explica, en buena parte, por el regreso a sus niveles habituales.`);
+  if (a.prevNivel === 'alto' && mov < 0) resumen.push(`**${MES_TITULO[s.prevMonth as MonthKey]} fue un mes alto** para este predio; por eso la bajada de ${mes} se explica, en buena parte, por el regreso a sus niveles habituales.`);
+  resumen.push(
+    a.veredicto === 'exceso'
+      ? `Resultado: **${mes} está POR ENCIMA de lo habitual** (exceso significativo). Corresponde investigar la causa y puede emitirse el memorando de advertencia.`
+      : a.veredicto === 'ahorro'
+        ? `Resultado: **${mes} está POR DEBAJO de lo habitual** (ahorro significativo). Puede emitirse el memorando de reconocimiento.`
+        : a.veredicto === 'normal'
+          ? `Resultado: **${mes} está DENTRO de lo habitual** para este predio (no supera el 25 % y S/ 100 frente a su promedio). Por eso InfraDash no lo marcó como exceso ni como ahorro significativo.`
+          : `Resultado: todavía no hay suficientes meses anteriores (se necesitan al menos 2) para saber si ${mes} es habitual.`
+  );
+  c.push(BOX('En pocas palabras', resumen, a.veredicto === 'exceso' ? 'FEF2F2' : a.veredicto === 'ahorro' ? 'ECFDF5' : 'EFF6FF', a.veredicto === 'exceso' ? 'B91C1C' : a.veredicto === 'ahorro' ? '047857' : '1F3A8A'));
+  c.push(E(160));
+
+  // 1. Datos del suministro y del recibo
+  c.push(H(`1. El suministro y el recibo de ${mes} de ${year}`));
+  c.push(
+    T(
+      [
+        ['Dato', 'Detalle'],
+        ['Suministro', s.record.supplyNumber],
+        ['Predio / sede', predio],
+        ['Categoría / ubicación', String(s.record.category || '—')],
+        ['N° de recibo', s.receipt || 'S/N'],
+        ['Lecturas (anterior → actual)', s.currReading > 0 ? `${fmtNum(s.prevReading)} → ${fmtNum(s.currReading)}` : 'Sin lectura en el recibo'],
+        [`Consumo del mes (${unit})`, `**${fmtNum(s.consumption)}**`],
+        ['Monto facturado', `**${fmtSol(s.amount)}**`],
+        [`Costo por ${unit}`, a.unitCostMes !== null ? fmtSol(a.unitCostMes) : '—']
+      ],
+      split(W, [3600, 5752])
+    )
+  );
+  c.push(E(120));
+
+  // 2. Comparación del mes
+  c.push(H(`2. ${Mes} frente a otros meses`));
+  const rows2: string[][] = [['Referencia', `Consumo (${unit})`, 'Monto', `Diferencia de consumo`, 'Diferencia de monto']];
+  const fila = (label: string, rc: number, ra: number) => [
+    label,
+    fmtNum(rc, 1),
+    fmtSol(ra),
+    rc > 0 ? `${signed(s.consumption - rc, v => fmtNum(v, 1))} (${pctTxt(rc, s.consumption)})` : '—',
+    ra > 0 ? `${signed(s.amount - ra, fmtSol)} (${pctTxt(ra, s.amount)})` : '—'
+  ];
+  rows2.push([`**${Mes} ${year} (mes analizado)**`, `**${fmtNum(s.consumption)}**`, `**${fmtSol(s.amount)}**`, '', '']);
+  if (s.prevMonth) rows2.push(fila(`Mes anterior (${MES_TITULO[s.prevMonth]})`, s.prevConsumption, s.prevAmount));
+  if (s.monthsInAvg > 0) rows2.push(fila(`Promedio de los ${s.monthsInAvg} meses anteriores`, s.avgConsumption, s.avgAmount));
+  if (a.maxMes && a.maxMes.month !== s.month) rows2.push(fila(`Mes más alto del año (${MES_TITULO[a.maxMes.month]})`, a.maxMes.consumption, a.maxMes.amount));
+  if (a.minMes && a.minMes.month !== s.month) rows2.push(fila(`Mes más bajo del año (${MES_TITULO[a.minMes.month]})`, a.minMes.consumption, a.minMes.amount));
+  if (a.prevYear) rows2.push(fila(`${Mes} ${year - 1} (mismo mes del año anterior)`, a.prevYear.consumption, a.prevYear.amount));
+  c.push(T(rows2, split(W, [3000, 1250, 1450, 1850, 1802]), '1F3A8A', [1]));
+  c.push(NOTE('Signo "+": el mes analizado tuvo más consumo o gasto que la referencia. Signo "–": tuvo menos. El promedio no cuenta los meses que solo pagaron cargo fijo (consumo 0).'));
+  if (!a.prevYear) c.push(NOTE(`No hay registro del suministro en ${year - 1} en InfraDash para comparar el mismo mes del año anterior.`));
+
+  // 3. Explicación de la variación frente al mes anterior
+  if (a.vsPrev && s.prevMonth) {
+    const pv = a.vsPrev;
+    const prevMes = a.months.find(m => m.month === s.prevMonth);
+    c.push(H(`3. Por qué el consumo ${dir(a.usaConsumo ? pv.dCons : pv.dAmt)} frente a ${prevName}`));
+    c.push(
+      P(
+        `**Los números.** En ${mes} el consumo ${pv.dCons === 0 ? `se mantuvo en **${cons(s.consumption)}**, igual que en ${prevName}.` : `pasó de **${cons(s.prevConsumption)}** (${prevName}) a **${cons(s.consumption)}**: ${signed(pv.dCons, v => fmtNum(v))} ${unit} (${pctS(pv.pCons)}).`} El monto pasó de **${fmtSol(s.prevAmount)}** a **${fmtSol(s.amount)}**: ${signed(pv.dAmt, fmtSol)} (${pctS(pv.pAmt)}).`
+      )
+    );
+    // ¿Cómo fue el mes anterior?
+    if (prevMes && prevMes.nivel && (a.usaConsumo ? a.avgAllConsumption : a.avgAllAmount) > 0) {
+      const ref = a.usaConsumo ? a.avgAllConsumption : a.avgAllAmount;
+      const pvv = a.usaConsumo ? prevMes.consumption : prevMes.amount;
+      const pp = ((pvv - ref) / ref) * 100;
+      const extremo =
+        a.minMes && a.minMes.month === s.prevMonth ? ` y fue el **mes más bajo** de enero a ${mes}` : a.maxMes && a.maxMes.month === s.prevMonth ? ` y fue el **mes más alto** de enero a ${mes}` : '';
+      if (prevMes.nivel === 'bajo')
+        c.push(
+          P(
+            `**El mes anterior fue bajo.** El ${cmpTxt} de ${prevName} estuvo **${fmtPct(Math.abs(pp))} por debajo** del promedio del año${extremo}. Cuando un mes sale bajo (por ejemplo, por menos actividad, vacaciones, un recibo con menos días o una lectura estimada), el mes siguiente parece subir mucho, aunque solo esté **volviendo a lo normal**.`
+          )
+        );
+      else if (prevMes.nivel === 'alto')
+        c.push(
+          P(
+            `**El mes anterior fue alto.** El ${cmpTxt} de ${prevName} estuvo **${fmtPct(Math.abs(pp))} por encima** del promedio del año${extremo}. Por eso la comparación con ${prevName} exagera la diferencia: conviene mirar también el promedio.`
+          )
+        );
+      else c.push(P(`**El mes anterior fue normal.** El ${cmpTxt} de ${prevName} estuvo dentro de lo habitual del año (${pctS(pp)} frente al promedio), así que la variación de ${mes} se debe al propio mes.`));
+    }
+    // Frente al promedio
+    if (a.vsAvg && s.monthsInAvg > 0) {
+      const p = a.usaConsumo ? a.vsAvg.pCons : a.vsAvg.pAmt;
+      c.push(
+        P(
+          `**Frente a lo habitual.** Comparado con el promedio de los ${s.monthsInAvg} meses anteriores (${cons(s.avgConsumption, 1)} y ${fmtSol(s.avgAmount)}), ${mes} está ${pctS(a.vsAvg.pCons)} en consumo y ${pctS(a.vsAvg.pAmt)} en monto. ${
+            a.veredicto === 'exceso'
+              ? '**Está por encima de lo habitual**: la subida no se explica solo por el mes anterior.'
+              : a.veredicto === 'ahorro'
+                ? '**Está por debajo de lo habitual.**'
+                : a.veredicto === 'normal'
+                  ? `**Está dentro de lo habitual** (${p !== null && Math.abs(p) < DEFAULT_PCT ? `la variación es menor al ${DEFAULT_PCT} %` : `la diferencia es menor a S/ ${DEFAULT_MIN_SOLES}`}).`
+                  : ''
+          }`
+        )
+      );
+    }
+    // Costo por unidad: el monto se movió distinto que el consumo
+    if (a.unitCostMes !== null && a.unitCostPrev !== null && a.unitCostPrev > 0) {
+      const pc = ((a.unitCostMes - a.unitCostPrev) / a.unitCostPrev) * 100;
+      if (Math.abs(pc) >= 3) {
+        const causas = isWater
+          ? 'la tarifa de agua por rangos de consumo (a mayor consumo, mayor precio por m³), el cargo por alcantarillado, el cargo fijo, reajustes de tarifa, intereses, moras u otros cobros del recibo'
+          : 'la tarifa (energía en horas punta y fuera de punta, potencia), el cargo fijo, el alumbrado público, reajustes de tarifa, intereses, moras u otros cobros del recibo';
+        c.push(
+          P(
+            `**El precio por ${unit} también ${pc > 0 ? 'subió' : 'bajó'}.** El monto ${pc > 0 ? 'subió más' : 'subió menos'} que el consumo porque el **costo por ${unit}** pasó de ${fmtSol(a.unitCostPrev)} en ${prevName} a **${fmtSol(a.unitCostMes)}** en ${mes} (${pctS(pc)})${a.unitCostAvg ? `; el promedio del año es ${fmtSol(a.unitCostAvg)}` : ''}. Esto puede deberse a ${causas}. Conviene revisar el detalle del recibo físico.`
+          )
+        );
+      }
+    }
+  } else {
+    c.push(H(`3. Variación frente al mes anterior`));
+    c.push(P(`No hay un mes anterior con recibo registrado en ${year} para comparar.`));
+  }
+
+  // 4. Historia del año
+  c.push(H(`4. Comportamiento histórico (enero a ${mes} de ${year})`));
+  const rows4: string[][] = [['Mes', `Consumo (${unit})`, 'Monto (S/)', `Costo por ${unit}`, 'Monto frente al mes anterior', 'Frente al promedio']];
+  a.months.forEach(m => {
+    const hi = m.month === s.month;
+    const t = (v: string) => (hi && v && !v.startsWith('**') ? `**${v}**` : v);
+    rows4.push([
+      t(MES_TITULO[m.month]),
+      t(m.hasReceipt ? fmtNum(m.consumption) : '—'),
+      t(m.hasReceipt ? fmtSol(m.amount) : '—'),
+      t(m.unitCost !== null ? fmtSol(m.unitCost) : '—'),
+      t(m.varPrevAmountPct !== null ? pctS(m.varPrevAmountPct) : '—'),
+      nivelTxt(m.nivel)
+    ]);
+  });
+  rows4.push([`Promedio de meses con datos (incluye ${mes})`, fmtNum(a.avgAllConsumption, 1), fmtSol(a.avgAllAmount), '', '', '']);
+  c.push(T(rows4, split(W, [1500, 1500, 1600, 1500, 1752, 1500]), '1F3A8A', [rows4.length - 1]));
+  c.push(NOTE(`"Frente al promedio": **Alto** o **Bajo** si el ${cmpTxt} del mes se aleja ${DEFAULT_PCT} % o más del promedio de los meses con datos; si no, Normal.`));
+  c.push(
+    ...(await chartPara(
+      {
+        title: `${predio.slice(0, 60)} – Suministro ${s.record.supplyNumber}`,
+        labels: a.months.map(m => MONTH_LABELS[m.month]),
+        bars: a.months.map(m => m.consumption),
+        line: a.months.map(m => m.amount),
+        unit,
+        highlight: [mIdx],
+        avg: a.avgAllConsumption,
+        color: a.veredicto === 'exceso' ? '#b91c1c' : a.veredicto === 'ahorro' ? '#0f766e' : '#1d4ed8'
+      },
+      `Consumo mensual (${unit}) y monto facturado (S/) – enero a ${mes} de ${year}; resaltado: ${mes}`
+    ))
+  );
+  const fuera = a.months.filter(m => m.nivel === 'alto' || m.nivel === 'bajo');
+  const ref = a.usaConsumo ? a.avgAllConsumption : a.avgAllAmount;
+  if (fuera.length) {
+    c.push(P(`**Meses fuera de lo habitual** (${cmpTxt} ${DEFAULT_PCT} % o más lejos del promedio):`, 80));
+    fuera.forEach(m => {
+      const v = a.usaConsumo ? m.consumption : m.amount;
+      const p = ref > 0 ? ((v - ref) / ref) * 100 : 0;
+      c.push(BL(`${MES_TITULO[m.month]}: ${a.usaConsumo ? cons(v) : fmtSol(v)} – **${m.nivel === 'alto' ? 'alto' : 'bajo'}** (${pctS(p)} frente al promedio).`));
+    });
+  } else c.push(P(`Ningún mes de enero a ${mes} se aleja ${DEFAULT_PCT} % o más del promedio: el predio tiene un consumo **estable** durante el año.`));
+  if (a.last3Avg !== null && a.beforeLast3Avg !== null && a.beforeLast3Avg > 0) {
+    const pt = ((a.last3Avg - a.beforeLast3Avg) / a.beforeLast3Avg) * 100;
+    const tend = pt >= 10 ? '**al alza**' : pt <= -10 ? '**a la baja**' : '**estable**';
+    const f = (v: number) => (a.usaConsumo ? cons(v, 1) : fmtSol(v));
+    c.push(P(`**Tendencia.** En los 3 últimos meses con datos el promedio fue ${f(a.last3Avg)}, frente a ${f(a.beforeLast3Avg)} en los meses anteriores (${pctS(pt)}): tendencia ${tend}.`));
+  }
+  if (a.prevYear)
+    c.push(
+      P(
+        `**Mismo mes del año anterior.** En ${mes} de ${year - 1} el predio consumió ${cons(a.prevYear.consumption)} y pagó ${fmtSol(a.prevYear.amount)}; en ${mes} de ${year}: ${cons(s.consumption)} (${pctTxt(a.prevYear.consumption, s.consumption)}) y ${fmtSol(s.amount)} (${pctTxt(a.prevYear.amount, s.amount)}).`
+      )
+    );
+
+  // 5. Verificación del registro
+  c.push(H('5. Verificación del registro en InfraDash'));
+  const ver: string[] = [];
+  if (a.lecturaNoEncadena)
+    ver.push(
+      `**Revisar:** la lectura anterior de ${mes} (${fmtNum(a.lecturaNoEncadena.thisPrev)}) no coincide con la lectura actual de ${MES_NOMBRE[a.lecturaNoEncadena.prevMonth]} (${fmtNum(a.lecturaNoEncadena.prevCurr)}). Puede ser un cambio de medidor o un error de registro: comparar con los recibos físicos.`
+    );
+  else if (s.currReading > 0 && s.prevMonth) ver.push(`Las lecturas de ${mes} encadenan con las de ${prevName} (la lectura anterior de ${mes} es la lectura actual de ${prevName}).`);
+  const pend = a.avisosLlenado.filter(x => !x.reviewed);
+  const revs = a.avisosLlenado.filter(x => x.reviewed);
+  if (pend.length) pend.forEach(x => ver.push(`Aviso pendiente de "Revisar llenado": ${x.message}`));
+  else ver.push('"Revisar llenado" no tiene avisos pendientes para este suministro.');
+  revs.forEach(x => ver.push(`Aviso marcado como correcto${x.reason ? ` (${x.reason})` : ''}: ${x.message}`));
+  if (s.consumption <= 0 && s.amount > 0) ver.push(`El recibo de ${mes} tiene monto pero consumo 0: verificar si el recibo indica consumo o si solo cobró cargo fijo.`);
+  ver.forEach(t => c.push(BL(t)));
+  c.push(E(100));
+
+  // 6. Conclusión y recomendaciones
+  c.push(H('6. Conclusión y recomendaciones'));
+  const subio = a.vsPrev ? (a.usaConsumo ? a.vsPrev.dCons : a.vsPrev.dAmt) > 0 : false;
+  let concl = '';
+  if (a.veredicto === 'normal' && a.vsPrev && subio)
+    concl = `La subida de ${mes} frente a ${prevName} es real (${signed(a.vsPrev.dAmt, fmtSol)}, ${pctS(a.vsPrev.pAmt)}), pero **no representa un consumo anormal**: ${
+      a.prevNivel === 'bajo' ? `se explica principalmente porque ${prevName} fue un mes bajo, y` : ''
+    } ${mes} se mantiene dentro del comportamiento habitual del predio durante el año.`;
+  else if (a.veredicto === 'normal') concl = `El consumo de ${mes} se mantiene **dentro del comportamiento habitual** del predio durante el año.`;
+  else if (a.veredicto === 'exceso') concl = `El consumo de ${mes} está **por encima de lo habitual** del predio (${pctS(a.vsAvg?.pAmt ?? null)} en monto frente a su promedio). Corresponde identificar la causa con el área usuaria.`;
+  else if (a.veredicto === 'ahorro') concl = `El consumo de ${mes} está **por debajo de lo habitual** del predio (${pctS(a.vsAvg?.pAmt ?? null)} en monto frente a su promedio).`;
+  else concl = `Todavía no hay suficientes meses anteriores para evaluar si el consumo de ${mes} es habitual.`;
+  c.push(P(concl, 100));
+  c.push(P('Se recomienda:', 60));
+  const recs: string[] = ['Verificar el recibo físico: lecturas, consumo, días facturados y el detalle de cada cargo.'];
+  if (a.veredicto !== 'ahorro') {
+    recs.push('Leer el medidor en campo y compararlo con la lectura del recibo.');
+    recs.push(
+      isWater
+        ? 'Hacer una prueba de fugas: con todas las llaves cerradas, el medidor no debe avanzar. Revisar cisternas, tanques elevados, inodoros, caños, riego y piscina si la hubiera.'
+        : 'Revisar los equipos de mayor consumo (aire acondicionado, bombas, termas, refrigeración) y sus horarios de encendido; verificar que no queden encendidos fuera de horario.'
+    );
+    recs.push('Consultar al área usuaria si en el mes hubo actividades extraordinarias (eventos, más personal, trabajos, limpieza o mantenimiento).');
+  }
+  recs.push(
+    a.veredicto === 'exceso'
+      ? 'Emitir el memorando de advertencia al área usuaria desde el botón "Reportes" de InfraDash y seguir el próximo recibo.'
+      : a.veredicto === 'ahorro'
+        ? 'Emitir el memorando de reconocimiento al área usuaria desde el botón "Reportes" de InfraDash.'
+        : `Seguir el próximo recibo en InfraDash: si el consumo pasa a estar ${DEFAULT_PCT} % o más por encima de su promedio, InfraDash lo marcará como exceso y se podrá emitir el memorando de advertencia.`
+  );
+  recs.forEach(t => c.push(BL(t)));
+  c.push(E(120));
+  c.push(...closing(h, [`Recibo detallado InfraDash – Suministro ${s.record.supplyNumber}, ${predio} (${mes} ${year}).`]));
   return buildDoc(c, h.asunto);
 };
 
