@@ -666,7 +666,7 @@ export const buildAnalisis = async (a: AnalisisSuministro, h: HeaderData): Promi
         ['Lecturas (anterior → actual)', s.currReading > 0 ? `${fmtNum(s.prevReading)} → ${fmtNum(s.currReading)}` : 'Sin lectura en el recibo'],
         [`Consumo del mes (${unit})`, `**${fmtNum(s.consumption)}**`],
         ['Monto facturado', `**${fmtSol(s.amount)}**`],
-        [`Costo por ${unit}`, a.unitCostMes !== null ? fmtSol(a.unitCostMes) : '—']
+        [`Costo promedio por ${unit} (monto ÷ consumo)`, a.unitCostMes !== null ? fmtSol(a.unitCostMes) : '—']
       ],
       split(W, [3600, 5752])
     )
@@ -746,11 +746,16 @@ export const buildAnalisis = async (a: AnalisisSuministro, h: HeaderData): Promi
       const pc = ((a.unitCostMes - a.unitCostPrev) / a.unitCostPrev) * 100;
       if (Math.abs(pc) >= 3) {
         const causas = isWater
-          ? 'la tarifa de agua por rangos de consumo (a mayor consumo, mayor precio por m³), el cargo por alcantarillado, el cargo fijo, reajustes de tarifa, intereses, moras u otros cobros del recibo'
-          : 'la tarifa (energía en horas punta y fuera de punta, potencia), el cargo fijo, el alumbrado público, reajustes de tarifa, intereses, moras u otros cobros del recibo';
+          ? 'la tarifa por rangos de consumo (cuanto más se consume, más m³ se cobran en el rango más caro), el cargo por alcantarillado, el cargo fijo, un reajuste de tarifa, intereses, moras u otros cobros del recibo'
+          : 'la tarifa por horario (horas punta y fuera de punta) o por potencia, el cargo fijo, el alumbrado público, un reajuste de tarifa, intereses, moras u otros cobros del recibo';
         c.push(
           P(
-            `**El precio por ${unit} también ${pc > 0 ? 'subió' : 'bajó'}.** El monto ${pc > 0 ? 'subió más' : 'subió menos'} que el consumo porque el **costo por ${unit}** pasó de ${fmtSol(a.unitCostPrev)} en ${prevName} a **${fmtSol(a.unitCostMes)}** en ${mes} (${pctS(pc)})${a.unitCostAvg ? `; el promedio del año es ${fmtSol(a.unitCostAvg)}` : ''}. Esto puede deberse a ${causas}. Conviene revisar el detalle del recibo físico.`
+            `**El costo promedio por ${unit} también ${pc > 0 ? 'subió' : 'bajó'}.** El monto varió ${pctS(pv.pAmt)} y el consumo ${pctS(pv.pCons)}. La diferencia se debe a que el **costo promedio por ${unit}** (monto del recibo ÷ consumo) pasó de ${fmtSol(a.unitCostPrev)} en ${prevName} a **${fmtSol(a.unitCostMes)}** en ${mes} (${pctS(pc)})${a.unitCostAvg ? `; el promedio del año es ${fmtSol(a.unitCostAvg)}` : ''}.`
+          )
+        );
+        c.push(
+          P(
+            `Este costo promedio incluye todos los cargos del recibo (${isWater ? 'agua, alcantarillado' : 'energía'}, cargo fijo, IGV y otros), por eso **no indica por sí solo que haya subido la tarifa**. Puede deberse a ${causas}. Para confirmarlo, revisar el detalle de cargos del recibo físico.`
           )
         );
       }
@@ -762,7 +767,7 @@ export const buildAnalisis = async (a: AnalisisSuministro, h: HeaderData): Promi
 
   // 4. Historia del año
   c.push(H(`4. Comportamiento histórico (enero a ${mes} de ${year})`));
-  const rows4: string[][] = [['Mes', `Consumo (${unit})`, 'Monto (S/)', `Costo por ${unit}`, 'Monto frente al mes anterior', 'Frente al promedio']];
+  const rows4: string[][] = [['Mes', `Consumo (${unit})`, 'Monto (S/)', `Costo promedio por ${unit}`, 'Monto frente al mes anterior', 'Frente al promedio']];
   a.months.forEach(m => {
     const hi = m.month === s.month;
     const t = (v: string) => (hi && v && !v.startsWith('**') ? `**${v}**` : v);
@@ -777,7 +782,7 @@ export const buildAnalisis = async (a: AnalisisSuministro, h: HeaderData): Promi
   });
   rows4.push([`Promedio de meses con datos (incluye ${mes})`, fmtNum(a.avgAllConsumption, 1), fmtSol(a.avgAllAmount), '', '', '']);
   c.push(T(rows4, split(W, [1500, 1500, 1600, 1500, 1752, 1500]), '1F3A8A', [rows4.length - 1]));
-  c.push(NOTE(`"Frente al promedio": **Alto** o **Bajo** si el ${cmpTxt} del mes se aleja ${DEFAULT_PCT} % o más del promedio de los meses con datos; si no, Normal.`));
+  c.push(NOTE(`"Costo promedio por ${unit}": monto del recibo ÷ consumo del mes (incluye todos los cargos; no es la tarifa oficial). "Frente al promedio": **Alto** o **Bajo** si el ${cmpTxt} del mes se aleja ${DEFAULT_PCT} % o más del promedio de los meses con datos; si no, Normal.`));
   c.push(
     ...(await chartPara(
       {
