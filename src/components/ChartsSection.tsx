@@ -15,6 +15,7 @@ import {
   formatSoles,
   formatNumber
 } from '../recordUtils';
+import { downloadExcel, ExcelSheetSpec } from '../excelExport';
 
 interface ChartsSectionProps {
   utilityType: UtilityType;
@@ -88,31 +89,44 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({ utilityType, recor
           : [];
 
   // Descarga CSV/Excel del período activo
-  const handleDownloadExcel = (chartTitle: string, typeData: 'evolution' | 'top') => {
+  const handleDownloadExcel = async (chartTitle: string, typeData: 'evolution' | 'top') => {
     setOpenMenu(null);
-    let headers: string[] = [];
-    let rows: string[][] = [];
-
-    if (typeData === 'evolution') {
-      headers = ['Mes', 'Gasto Total Facturado (S/)', `Consumo (${unitLabel})`];
-      rows = periodIdx.map(i => [MONTH_LABELS[MONTH_KEYS[i]], monthlyTotals[i].toFixed(2), monthlyConsumption[i].toFixed(2)]);
-      rows.push([`TOTAL ${periodLabel}`, periodTotal.toFixed(2), periodConsumption.toFixed(2)]);
-    } else {
-      headers = ['N°', 'Predio / Sede', `Gasto ${periodLabel} (S/)`];
-      rows = topProperties.map((p, idx) => [(idx + 1).toString(), `"${p.name}"`, p.total.toFixed(2)]);
+    const r2 = (v: number) => Math.round(v * 100) / 100;
+    const servicio = utilityType === 'energy' ? 'Energía Eléctrica' : 'Agua Potable';
+    const periodoArchivo = periodLabel.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '_');
+    const spec: ExcelSheetSpec =
+      typeData === 'evolution'
+        ? {
+            fileName: `Reporte_${chartTitle.replace(/\s+/g, '_')}_${periodoArchivo}_${utilityType === 'energy' ? 'Energia' : 'Agua'}`,
+            sheetName: 'Evolución mensual',
+            title: `${servicio} – ${chartTitle} (${periodLabel})`,
+            columns: [
+              { header: 'Mes', kind: 'text', width: 14 },
+              { header: 'Gasto Total Facturado (S/)', kind: 'soles', width: 24 },
+              { header: `Consumo (${unitLabel})`, kind: 'number', width: 18 }
+            ],
+            rows: periodIdx.map(i => [MONTH_LABELS[MONTH_KEYS[i]], r2(monthlyTotals[i]), r2(monthlyConsumption[i])]),
+            totals: [`TOTAL ${periodLabel}`, 'sum', 'sum']
+          }
+        : {
+            fileName: `Reporte_${chartTitle.replace(/\s+/g, '_')}_${periodoArchivo}_${utilityType === 'energy' ? 'Energia' : 'Agua'}`,
+            sheetName: 'Mayor gasto',
+            title: `${servicio} – ${chartTitle} (${periodLabel})`,
+            columns: [
+              { header: 'N°', kind: 'center', width: 6 },
+              { header: 'Predio / Sede', kind: 'text', width: 52 },
+              { header: `Gasto ${periodLabel} (S/)`, kind: 'soles', width: 20 }
+            ],
+            rows: topProperties.map((p, idx) => [idx + 1, p.name, r2(p.total)]),
+            totals: [null, 'TOTAL', 'sum']
+          };
+    try {
+      await downloadExcel({ ...spec, accent: utilityType === 'energy' ? '1F4E79' : '0E7490' });
+      onShowToast('Excel descargado', `Los datos de "${chartTitle}" (${periodLabel}) se descargaron en Excel (.xlsx).`, 'success');
+    } catch (e: any) {
+      console.error('[InfraDash excel]', e);
+      onShowToast('No se pudo exportar', e?.message || 'Intente de nuevo.', 'error');
     }
-
-    const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map(e => e.join(';'))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `Reporte_${chartTitle.replace(/\s+/g, '_')}_${periodLabel.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '_')}_${utilityType}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    onShowToast('Exportación Exitosa', `Los datos de "${chartTitle}" (${periodLabel}) se descargaron en formato Excel/CSV.`, 'success');
   };
 
   // Compartir por correo el resumen del período activo

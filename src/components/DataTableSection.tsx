@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Eye, Edit2, Trash2, Search, Filter, AlertCircle, Plus, FileSpreadsheet, Calendar, Copy, X, Merge, ClipboardCheck, CheckCircle2, RotateCcw, FileText } from 'lucide-react';
 import { ReportsModal } from './ReportsModal';
+import { downloadExcel, ExcelColumn } from '../excelExport';
 import { findCandidates, suggestedMonth, MES_TITULO } from '../reports';
 import { SupplyRecord, UtilityType, UserRole, FilterState } from '../types';
 import {
@@ -131,7 +132,7 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
     }
   };
 
-  const handleExportToExcel = () => {
+  const handleExportToExcel = async () => {
     if (filteredRecords.length === 0) {
       if (onShowToast) {
         onShowToast('Exportación', 'No hay registros para exportar con los filtros actuales.', 'warning');
@@ -144,47 +145,64 @@ export const DataTableSection: React.FC<DataTableSectionProps> = ({
     const isMonth = selectedMonthView !== 'all';
     const monthKey = selectedMonthView as MonthKey;
 
-    const headers = isMonth
-      ? ['Nro Suministro', 'Predio / Sede', 'Categoria', `Nro Recibo (${selectedMonthView.toUpperCase()})`, `Consumo ${selectedMonthView.toUpperCase()} (${unitLabel})`, `Monto ${selectedMonthView.toUpperCase()} (S/)`]
-      : ['Nro Suministro', 'Predio / Sede', 'Categoria', 'Ultimo Nro Recibo', `Consumo Anual (${unitLabel})`, ...MONTH_KEYS.map(m => `${MONTH_LABELS[m]} (S/)`), 'Total Facturado (S/)'];
+    const MES = selectedMonthView.toUpperCase();
+    const servicio = utilityType === 'energy' ? 'Energía Eléctrica' : 'Agua Potable';
+    const nombreMes: Record<string, string> = { ene: 'Enero', feb: 'Febrero', mar: 'Marzo', abr: 'Abril', may: 'Mayo', jun: 'Junio', jul: 'Julio', ago: 'Agosto', set: 'Setiembre', oct: 'Octubre', nov: 'Noviembre', dic: 'Diciembre' };
+    const anio = filteredRecords.find(r => r.year)?.year || new Date().getFullYear();
+    const baseCols: ExcelColumn[] = [
+      { header: 'N° Suministro', kind: 'center', width: 15 },
+      { header: 'Predio / Sede', kind: 'text', width: 52 },
+      { header: 'Categoría', kind: 'center', width: 16 }
+    ];
+    const baseRow = (r: SupplyRecord) => [String(r.supplyNumber ?? '').trim(), (r.propertyName || r.address || '').replace(/\s+/g, ' ').trim(), String(r.category || '').trim()];
+    const num = (v: number | null) => (v === null || isNaN(v) ? null : Math.round(v * 100) / 100);
+
+    const columns: ExcelColumn[] = isMonth
+      ? [
+          ...baseCols,
+          { header: `N° Recibo (${MES})`, kind: 'center', width: 17 },
+          { header: `Consumo ${MES} (${unitLabel})`, kind: 'number', width: 16 },
+          { header: `Monto ${MES} (S/)`, kind: 'soles', width: 17 }
+        ]
+      : [
+          ...baseCols,
+          { header: 'Último N° Recibo', kind: 'center', width: 17 },
+          { header: `Consumo Anual (${unitLabel})`, kind: 'number', width: 15 },
+          ...MONTH_KEYS.map(m => ({ header: `${MONTH_LABELS[m]} (S/)`, kind: 'soles' as const, width: 13 })),
+          { header: 'Total Facturado (S/)', kind: 'soles', width: 17 }
+        ];
 
     const rows = filteredRecords.map(r => {
-      const base = [
-        r.supplyNumber,
-        `"${r.propertyName || r.address || ''}"`,
-        `"${r.category || ''}"`
-      ];
       if (isMonth) {
-        const cons = getMonthConsumption(r, monthKey);
-        return [
-          ...base,
-          getMonthReceipt(r, monthKey) || '',
-          cons === null ? '' : cons.toFixed(2),
-          getMonthAmount(r, monthKey).toFixed(2)
-        ];
+        return [...baseRow(r), getMonthReceipt(r, monthKey) || '', num(getMonthConsumption(r, monthKey)), num(getMonthAmount(r, monthKey))];
       }
-      const annualCons = getAnnualConsumption(r);
       return [
-        ...base,
+        ...baseRow(r),
         getLatestReceipt(r) || '',
-        annualCons === null ? '' : annualCons.toFixed(2),
-        ...MONTH_KEYS.map(m => getMonthAmount(r, m).toFixed(2)),
-        getAnnualAmount(r).toFixed(2)
+        num(getAnnualConsumption(r)),
+        ...MONTH_KEYS.map(m => num(getMonthAmount(r, m))),
+        num(getAnnualAmount(r))
       ];
     });
 
-    const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map(e => e.join(';'))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `Reporte_${utilityType === 'energy' ? 'Energia_Electrica' : 'Agua_Potable'}_${selectedMonthView === 'all' ? 'Anual' : selectedMonthView.toUpperCase()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const totals: ('sum' | string | null)[] = columns.map((c, i) => (i === 0 ? 'TOTAL' : i === 3 ? `${rows.length} suministros` : c.kind === 'number' || c.kind === 'soles' ? 'sum' : null));
 
-    if (onShowToast) {
-      onShowToast('Éxito', 'Los datos se han exportado a Excel correctamente.', 'success');
+    try {
+      await downloadExcel({
+        fileName: `Reporte_${utilityType === 'energy' ? 'Energia_Electrica' : 'Agua_Potable'}_${isMonth ? MES : 'Anual'}_${anio}`,
+        sheetName: `${utilityType === 'energy' ? 'Energía' : 'Agua'} ${isMonth ? nombreMes[selectedMonthView] : 'Anual'} ${anio}`,
+        title: isMonth ? `Reporte de ${servicio} – Recibos de ${nombreMes[selectedMonthView]} ${anio}` : `Reporte de ${servicio} – Año ${anio} (montos por mes)`,
+        columns,
+        rows,
+        totals,
+        accent: utilityType === 'energy' ? '1F4E79' : '0E7490'
+      });
+      if (onShowToast) {
+        onShowToast('Excel descargado', `Se descargó el archivo de Excel (.xlsx) con ${rows.length} suministros.`, 'success');
+      }
+    } catch (e: any) {
+      console.error('[InfraDash excel]', e);
+      if (onShowToast) onShowToast('No se pudo exportar', e?.message || 'Intente de nuevo.', 'error');
     }
   };
 
